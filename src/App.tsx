@@ -35,7 +35,7 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-zinc-950 text-white">
+    <div className="flex min-h-screen bg-[#050505] text-white">
       <Sidebar page={page} setPage={setPage} />
 
       <main className="flex-1 overflow-x-hidden">
