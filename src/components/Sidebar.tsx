@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import {
+  ChevronLeft,
+  ChevronRight,
   FileUp,
   Image,
   LayoutDashboard,
@@ -18,12 +20,15 @@ type SidebarProps = {
   setPage: (page: string) => void;
   isOpen: boolean;
   closeSidebar: () => void;
+  collapsed: boolean;
+  toggleCollapsed: () => void;
 };
 
 type MenuButtonProps = {
   name: string;
   label: string;
   icon: ReactNode;
+  collapsed: boolean;
   setPage: (page: string) => void;
   itemClass: (name: string) => string;
 };
@@ -33,9 +38,13 @@ export default function Sidebar({
   setPage,
   isOpen,
   closeSidebar,
+  collapsed,
+  toggleCollapsed,
 }: SidebarProps) {
   function itemClass(name: string) {
-    return `flex items-center gap-3 w-full p-3 rounded-xl transition ${
+    return `flex items-center ${
+      collapsed ? "justify-center" : "gap-3"
+    } w-full p-3 rounded-xl transition ${
       page === name
         ? "bg-yellow-400 text-black font-bold shadow-lg shadow-yellow-400/20"
         : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
@@ -44,9 +53,9 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-900 bg-black p-5 transition-transform duration-300 lg:static lg:z-auto lg:min-h-screen lg:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-zinc-900 bg-black p-5 transition-all duration-300 lg:static lg:z-auto lg:min-h-screen lg:translate-x-0 ${
         isOpen ? "translate-x-0" : "-translate-x-full"
-      }`}
+      } ${collapsed ? "lg:w-24" : "w-72 lg:w-72"}`}
     >
       <div className="mb-10 flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -54,15 +63,16 @@ export default function Sidebar({
             <Sparkles size={22} />
           </div>
 
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">
-              PartyControl
-            </h1>
-
-            <p className="text-xs text-zinc-500">
-              Event Management v2
-            </p>
-          </div>
+          {!collapsed && (
+            <div>
+              <h1 className="text-2xl font-black tracking-tight">
+                PartyControl
+              </h1>
+              <p className="text-xs text-zinc-500">
+                Event Management v2
+              </p>
+            </div>
+          )}
         </div>
 
         <button
@@ -75,11 +85,21 @@ export default function Sidebar({
         </button>
       </div>
 
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        className="mb-5 hidden w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-zinc-400 hover:bg-zinc-900 hover:text-white lg:flex"
+        aria-label={collapsed ? "Sidebar ausklappen" : "Sidebar einklappen"}
+      >
+        {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+      </button>
+
       <nav className="space-y-2">
         <MenuButton
           name="dashboard"
           label="Dashboard"
           icon={<LayoutDashboard size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -88,6 +108,7 @@ export default function Sidebar({
           name="guests"
           label="Gäste"
           icon={<Users size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -96,6 +117,7 @@ export default function Sidebar({
           name="import"
           label="CSV Import"
           icon={<FileUp size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -104,6 +126,7 @@ export default function Sidebar({
           name="tickets"
           label="Tickets"
           icon={<Ticket size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -112,6 +135,7 @@ export default function Sidebar({
           name="checkin"
           label="Check-In"
           icon={<QrCode size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -120,6 +144,7 @@ export default function Sidebar({
           name="music"
           label="Musik"
           icon={<Music size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -128,31 +153,32 @@ export default function Sidebar({
           name="photos"
           label="Fotos"
           icon={<Image size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
       </nav>
 
       <div className="mt-auto">
-        <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-          <p className="text-sm font-bold">
-            Geburtstags Party 🎉
-          </p>
+        {!collapsed && (
+          <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <p className="text-sm font-bold">Geburtstags Party 🎉</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Oktober · ca. 300 Gäste
+            </p>
 
-          <p className="mt-1 text-xs text-zinc-500">
-            Oktober · ca. 300 Gäste
-          </p>
-
-          <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
-            <span className="h-2 w-2 rounded-full bg-green-400" />
-            System online
+            <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
+              <span className="h-2 w-2 rounded-full bg-green-400" />
+              System online
+            </div>
           </div>
-        </div>
+        )}
 
         <MenuButton
           name="settings"
           label="Einstellungen"
           icon={<Settings size={20} />}
+          collapsed={collapsed}
           setPage={setPage}
           itemClass={itemClass}
         />
@@ -165,6 +191,7 @@ function MenuButton({
   name,
   label,
   icon,
+  collapsed,
   setPage,
   itemClass,
 }: MenuButtonProps) {
@@ -173,9 +200,10 @@ function MenuButton({
       type="button"
       className={itemClass(name)}
       onClick={() => setPage(name)}
+      title={collapsed ? label : undefined}
     >
       {icon}
-      <span>{label}</span>
+      {!collapsed && <span>{label}</span>}
     </button>
   );
 }

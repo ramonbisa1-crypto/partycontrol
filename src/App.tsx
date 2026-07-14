@@ -17,6 +17,7 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,7 +48,6 @@ function App() {
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-zinc-800 border-t-yellow-400 rounded-full animate-spin mx-auto" />
-
           <p className="text-zinc-400 mt-4">
             PartyControl wird geladen...
           </p>
@@ -76,6 +76,10 @@ function App() {
         setPage={changePage}
         isOpen={sidebarOpen}
         closeSidebar={() => setSidebarOpen(false)}
+        collapsed={sidebarCollapsed}
+        toggleCollapsed={() =>
+          setSidebarCollapsed((currentValue) => !currentValue)
+        }
       />
 
       <main className="flex-1 min-w-0 overflow-x-hidden">
@@ -90,13 +94,8 @@ function App() {
           </button>
 
           <div>
-            <p className="font-black tracking-tight">
-              PartyControl
-            </p>
-
-            <p className="text-xs text-zinc-500">
-              Event Management
-            </p>
+            <p className="font-black tracking-tight">PartyControl</p>
+            <p className="text-xs text-zinc-500">Event Management</p>
           </div>
         </header>
 
@@ -108,14 +107,10 @@ function App() {
 
         {page === "music" && (
           <div className="p-5 sm:p-8 lg:p-10">
-            <p className="text-yellow-400 font-semibold mb-2">
-              Musik
-            </p>
-
+            <p className="text-yellow-400 font-semibold mb-2">Musik</p>
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
               Musikwünsche
             </h1>
-
             <p className="text-zinc-400 mt-2">
               Diese Funktion erstellen wir später.
             </p>
@@ -124,14 +119,10 @@ function App() {
 
         {page === "photos" && (
           <div className="p-5 sm:p-8 lg:p-10">
-            <p className="text-yellow-400 font-semibold mb-2">
-              Galerie
-            </p>
-
+            <p className="text-yellow-400 font-semibold mb-2">Galerie</p>
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
               Fotowand
             </h1>
-
             <p className="text-zinc-400 mt-2">
               Diese Funktion erstellen wir später.
             </p>
