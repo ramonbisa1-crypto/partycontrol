@@ -10,11 +10,14 @@ import {
   Sparkles,
   Ticket,
   Users,
+  X,
 } from "lucide-react";
 
 type SidebarProps = {
   page: string;
   setPage: (page: string) => void;
+  isOpen: boolean;
+  closeSidebar: () => void;
 };
 
 type MenuButtonProps = {
@@ -25,7 +28,12 @@ type MenuButtonProps = {
   itemClass: (name: string) => string;
 };
 
-export default function Sidebar({ page, setPage }: SidebarProps) {
+export default function Sidebar({
+  page,
+  setPage,
+  isOpen,
+  closeSidebar,
+}: SidebarProps) {
   function itemClass(name: string) {
     return `flex items-center gap-3 w-full p-3 rounded-xl transition ${
       page === name
@@ -35,10 +43,14 @@ export default function Sidebar({ page, setPage }: SidebarProps) {
   }
 
   return (
-    <aside className="w-72 min-h-screen bg-black border-r border-zinc-900 p-5 flex flex-col">
-      <div className="mb-10">
+    <aside
+      className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-zinc-900 bg-black p-5 transition-transform duration-300 lg:static lg:z-auto lg:min-h-screen lg:translate-x-0 ${
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
+      <div className="mb-10 flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-yellow-400 text-black rounded-2xl p-3">
+          <div className="rounded-2xl bg-yellow-400 p-3 text-black">
             <Sparkles size={22} />
           </div>
 
@@ -52,6 +64,15 @@ export default function Sidebar({ page, setPage }: SidebarProps) {
             </p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={closeSidebar}
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-400 hover:bg-zinc-900 hover:text-white lg:hidden"
+          aria-label="Menü schliessen"
+        >
+          <X size={20} />
+        </button>
       </div>
 
       <nav className="space-y-2">
@@ -113,14 +134,19 @@ export default function Sidebar({ page, setPage }: SidebarProps) {
       </nav>
 
       <div className="mt-auto">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 mb-4">
+        <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
           <p className="text-sm font-bold">
             Geburtstags Party 🎉
           </p>
 
-          <p className="text-xs text-zinc-500 mt-1">
+          <p className="mt-1 text-xs text-zinc-500">
             Oktober · ca. 300 Gäste
           </p>
+
+          <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
+            <span className="h-2 w-2 rounded-full bg-green-400" />
+            System online
+          </div>
         </div>
 
         <MenuButton
