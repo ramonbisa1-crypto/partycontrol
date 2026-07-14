@@ -13,20 +13,31 @@ import ImportGuests from "./pages/ImportGuests";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Music from "./pages/Music";
+import Photos from "./pages/Photos";
 import PublicMusic from "./pages/PublicMusic";
+import PublicPhotos from "./pages/PublicPhotos";
 
 function App() {
-  const searchParameters = new URLSearchParams(window.location.search);
+  const searchParameters = new URLSearchParams(
+    window.location.search
+  );
+
   const publicView = searchParameters.get("view");
 
   const [session, setSession] = useState<Session | null>(null);
   const [page, setPage] = useState("dashboard");
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] =
+    useState(false);
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (publicView === "music") {
+    if (
+      publicView === "music" ||
+      publicView === "photos"
+    ) {
       setLoading(false);
       return;
     }
@@ -38,10 +49,12 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      setSession(currentSession);
-      setLoading(false);
-    });
+    } = supabase.auth.onAuthStateChange(
+      (_event, currentSession) => {
+        setSession(currentSession);
+        setLoading(false);
+      }
+    );
 
     return () => {
       subscription.unsubscribe();
@@ -55,6 +68,10 @@ function App() {
 
   if (publicView === "music") {
     return <PublicMusic />;
+  }
+
+  if (publicView === "photos") {
+    return <PublicPhotos />;
   }
 
   if (loading) {
@@ -93,7 +110,9 @@ function App() {
         closeSidebar={() => setSidebarOpen(false)}
         collapsed={sidebarCollapsed}
         toggleCollapsed={() =>
-          setSidebarCollapsed((currentValue) => !currentValue)
+          setSidebarCollapsed(
+            (currentValue) => !currentValue
+          )
         }
       />
 
@@ -125,23 +144,7 @@ function App() {
         {page === "tickets" && <Tickets />}
         {page === "checkin" && <CheckIn />}
         {page === "music" && <Music />}
-
-        {page === "photos" && (
-          <div className="p-5 sm:p-8 lg:p-10">
-            <p className="mb-2 font-semibold text-yellow-400">
-              Galerie
-            </p>
-
-            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-              Fotowand
-            </h1>
-
-            <p className="mt-2 text-zinc-400">
-              Diese Funktion erstellen wir als Nächstes.
-            </p>
-          </div>
-        )}
-
+        {page === "photos" && <Photos />}
         {page === "settings" && <Settings />}
       </main>
     </div>
