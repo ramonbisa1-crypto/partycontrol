@@ -1,20 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+
 import {
+  CalendarDays,
   CheckCircle2,
   Clock3,
   Crown,
   RefreshCcw,
+  ShieldAlert,
   ShieldCheck,
-  UserRound,
+  Sparkles,
   Users,
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
 
+import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import EmptyState from "../components/ui/EmptyState";
+import LoadingState from "../components/ui/LoadingState";
+import PageHeader from "../components/ui/PageHeader";
+import { useToast } from "../components/ui/ToastProvider";
+
+type GuestCategory = "Normal" | "VIP" | "Helfer" | "Blacklist";
+
 type Guest = {
   id: string;
   name: string;
-  category: string;
+  category: GuestCategory;
   checked_in: boolean;
   checked_in_at: string | null;
 };
@@ -26,23 +40,48 @@ type Companion = {
   checked_in_at: string | null;
 };
 
-type RecentPerson = {
+type RecentCheckIn = {
   id: string;
   name: string;
   type: "Hauptgast" | "Begleitung";
   checked_in_at: string;
 };
 
+type Countdown = {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  started: boolean;
+  finished: boolean;
+};
+
+/*
+ * Party-Datum:
+ * 16. Oktober 2026, aktuell vorläufig um 19:00 Uhr.
+ *
+ * Sobald die genaue Uhrzeit klar ist, musst du nur
+ * die Uhrzeit in dieser Zeile anpassen.
+ */
+const partyDate = new Date("2026-10-16T19:00:00+02:00");
+
 export default function Dashboard() {
+  const { showToast } = useToast();
+
   const [guests, setGuests] = useState<Guest[]>([]);
   const [companions, setCompanions] = useState<Companion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
 
-  async function loadData(showLoading = false) {
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  async function loadDashboard(showLoading = false) {
     if (showLoading) {
       setLoading(true);
+    } else {
+      setRefreshing(true);
     }
 
     const [guestResult, companionResult] = await Promise.all([
@@ -58,29 +97,46 @@ export default function Dashboard() {
     ]);
 
     if (guestResult.error) {
-      setErrorMessage(guestResult.error.message);
+      showToast({
+        type: "error",
+        title: "Dashboard konnte nicht geladen werden",
+        message: guestResult.error.message,
+      });
+
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
     if (companionResult.error) {
-      setErrorMessage(companionResult.error.message);
+      showToast({
+        type: "error",
+        title: "Begleitungen konnten nicht geladen werden",
+        message: companionResult.error.message,
+      });
+
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
-    setGuests(guestResult.data ?? []);
-    setCompanions(companionResult.data ?? []);
-    setErrorMessage("");
+    setGuests((guestResult.data ?? []) as Guest[]);
+    setCompanions((companionResult.data ?? []) as Companion[]);
+
     setLastUpdated(new Date());
     setLoading(false);
+    setRefreshing(false);
   }
 
   useEffect(() => {
-    loadData(true);
+    loadDashboard(true);
+
+    const clockInterval = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
 
     const channel = supabase
-      .channel("partycontrol-dashboard")
+      .channel("professional-dashboard")
       .on(
         "postgres_changes",
         {
@@ -89,7 +145,7 @@ export default function Dashboard() {
           table: "guests",
         },
         () => {
-          loadData();
+          loadDashboard();
         }
       )
       .on(
@@ -100,12 +156,13 @@ export default function Dashboard() {
           table: "companions",
         },
         () => {
-          loadData();
+          loadDashboard();
         }
       )
       .subscribe();
 
     return () => {
+      window.clearInterval(clockInterval);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -139,7 +196,9 @@ export default function Dashboard() {
     ).length;
 
     const percentage =
-      totalPeople > 0 ? Math.round((checkedTotal / totalPeople) * 100) : 0;
+      totalPeople > 0
+        ? Math.round((checkedTotal / totalPeople) * 100)
+        : 0;
 
     return {
       totalMainGuests,
@@ -156,8 +215,8 @@ export default function Dashboard() {
     };
   }, [guests, companions]);
 
-  const recentCheckIns = useMemo<RecentPerson[]>(() => {
-    const guestCheckIns: RecentPerson[] = guests
+  const recentCheckIns = useMemo<RecentCheckIn[]>(() => {
+    const guestCheckIns: RecentCheckIn[] = guests
       .filter(
         (
           guest
@@ -172,13 +231,15 @@ export default function Dashboard() {
         checked_in_at: guest.checked_in_at,
       }));
 
-    const companionCheckIns: RecentPerson[] = companions
+    const companionCheckIns: RecentCheckIn[] = companions
       .filter(
         (
           companion
         ): companion is Companion & {
           checked_in_at: string;
-        } => companion.checked_in && Boolean(companion.checked_in_at)
+        } =>
+          companion.checked_in &&
+          Boolean(companion.checked_in_at)
       )
       .map((companion) => ({
         id: companion.id,
@@ -196,14 +257,373 @@ export default function Dashboard() {
       .slice(0, 8);
   }, [guests, companions]);
 
+  const countdown = useMemo(() => {
+    return calculateCountdown(currentTime, partyDate);
+  }, [currentTime]);
+
   if (loading) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center p-5">
-        <div className="text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-zinc-800 border-t-yellow-400" />
+      <LoadingState
+        title="Dashboard wird geladen"
+        description="Die aktuellen Eventdaten werden vorbereitet."
+      />
+    );
+  }
 
-          <p className="mt-4 text-zinc-400">
-            Dashboard wird geladen...
+  return (
+    <div className="page-enter p-4 sm:p-6 lg:p-10">
+      <PageHeader
+        eyebrow="Live Event Control"
+        title="Dashboard"
+        description="Alle wichtigen Kennzahlen und Check-ins für die Geburtstagsparty am 16. Oktober 2026."
+        actions={
+          <>
+            <div className="flex min-h-12 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+              <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-green-400" />
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-green-400">
+                  Live verbunden
+                </p>
+
+                <p className="text-sm font-semibold text-zinc-300">
+                  {formatClock(currentTime)}
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="secondary"
+              icon={<RefreshCcw size={18} />}
+              loading={refreshing}
+              onClick={() => loadDashboard()}
+            >
+              Aktualisieren
+            </Button>
+          </>
+        }
+      />
+
+      <section className="mb-7 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+        <Card
+          className="relative overflow-hidden"
+          padding="large"
+        >
+          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-yellow-400/10 blur-3xl" />
+
+          <div className="pointer-events-none absolute -bottom-36 -left-24 h-80 w-80 rounded-full bg-yellow-400/5 blur-3xl" />
+
+          <div className="relative">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CalendarDays
+                    size={20}
+                    className="text-yellow-400"
+                  />
+
+                  <p className="font-bold text-yellow-400">
+                    Freitag, 16. Oktober 2026
+                  </p>
+                </div>
+
+                <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+                  Birthday Party
+                </h2>
+
+                <p className="mt-3 max-w-xl leading-7 text-zinc-400">
+                  Der zentrale Überblick für Einlass,
+                  Gästemanagement und Live-Statistiken.
+                </p>
+              </div>
+
+              <EventStatus countdown={countdown} />
+            </div>
+
+            {!countdown.finished && !countdown.started && (
+              <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <CountdownUnit
+                  value={countdown.days}
+                  label="Tage"
+                />
+
+                <CountdownUnit
+                  value={countdown.hours}
+                  label="Stunden"
+                />
+
+                <CountdownUnit
+                  value={countdown.minutes}
+                  label="Minuten"
+                />
+
+                <CountdownUnit
+                  value={countdown.seconds}
+                  label="Sekunden"
+                />
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card
+          className="flex flex-col justify-between"
+          padding="large"
+        >
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-500/10 text-green-400">
+                <CheckCircle2 size={23} />
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-zinc-500">
+                  Einlass-Fortschritt
+                </p>
+
+                <p className="text-4xl font-black tracking-tight">
+                  {statistics.percentage}%
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-7 h-4 overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-yellow-500 to-yellow-300 transition-all duration-700"
+                style={{
+                  width: `${statistics.percentage}%`,
+                }}
+              />
+            </div>
+
+            <div className="mt-4 flex items-center justify-between text-sm">
+              <p className="text-zinc-400">
+                {statistics.checkedTotal} eingecheckt
+              </p>
+
+              <p className="font-bold text-zinc-300">
+                {statistics.totalPeople} total
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-7 rounded-2xl border border-zinc-800 bg-black/25 p-4">
+            <p className="text-sm text-zinc-500">
+              Noch offen
+            </p>
+
+            <p className="mt-1 text-3xl font-black">
+              {statistics.openTotal}
+            </p>
+          </div>
+        </Card>
+      </section>
+
+      <section className="mb-7 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <MetricCard
+          icon={<Users size={22} />}
+          title="Personen total"
+          value={statistics.totalPeople}
+          description={`${statistics.totalMainGuests} Hauptgäste · ${statistics.totalCompanions} Begleitungen`}
+          variant="neutral"
+        />
+
+        <MetricCard
+          icon={<CheckCircle2 size={22} />}
+          title="Eingecheckt"
+          value={statistics.checkedTotal}
+          description={`${statistics.checkedMainGuests} Hauptgäste · ${statistics.checkedCompanions} Begleitungen`}
+          variant="success"
+        />
+
+        <MetricCard
+          icon={<Crown size={22} />}
+          title="VIP"
+          value={statistics.vipTotal}
+          description="VIP-Hauptgäste"
+          variant="vip"
+        />
+
+        <MetricCard
+          icon={<ShieldCheck size={22} />}
+          title="Helfer"
+          value={statistics.helperTotal}
+          description="Erfasste Helfer"
+          variant="info"
+        />
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 2xl:grid-cols-[1fr_0.75fr]">
+        <Card padding="large">
+          <div className="flex flex-col gap-4 border-b border-zinc-800 pb-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-3">
+                <Clock3
+                  className="text-yellow-400"
+                  size={22}
+                />
+
+                <h2 className="text-xl font-black sm:text-2xl">
+                  Letzte Check-ins
+                </h2>
+              </div>
+
+              <p className="mt-2 text-sm text-zinc-500">
+                Wird auf allen Geräten automatisch aktualisiert.
+              </p>
+            </div>
+
+            {lastUpdated && (
+              <Badge variant="success">
+                Aktualisiert {formatClock(lastUpdated)}
+              </Badge>
+            )}
+          </div>
+
+          {recentCheckIns.length === 0 ? (
+            <div className="mt-6">
+              <EmptyState
+                icon={<Clock3 size={28} />}
+                title="Noch keine Check-ins"
+                description="Sobald die erste Person eingecheckt wird, erscheint sie hier."
+              />
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {recentCheckIns.map((person, index) => (
+                <RecentCheckInRow
+                  key={`${person.type}-${person.id}`}
+                  person={person}
+                  position={index + 1}
+                />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <div className="space-y-6">
+          <Card padding="large">
+            <div className="flex items-center gap-3">
+              <Sparkles
+                size={22}
+                className="text-yellow-400"
+              />
+
+              <div>
+                <h2 className="text-xl font-black">
+                  Eventstatus
+                </h2>
+
+                <p className="text-sm text-zinc-500">
+                  Aktueller Systemzustand
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              <StatusRow
+                label="Datenbank"
+                value="Online"
+                status="success"
+              />
+
+              <StatusRow
+                label="QR-Check-in"
+                value="Bereit"
+                status="success"
+              />
+
+              <StatusRow
+                label="Realtime"
+                value="Verbunden"
+                status="success"
+              />
+
+              <StatusRow
+                label="Party-Datum"
+                value="16.10.2026"
+                status="neutral"
+              />
+            </div>
+          </Card>
+
+          <Card padding="large">
+            <div className="flex items-center gap-3">
+              <ShieldAlert
+                size={22}
+                className={
+                  statistics.blacklistTotal > 0
+                    ? "text-red-400"
+                    : "text-zinc-500"
+                }
+              />
+
+              <div>
+                <h2 className="text-xl font-black">
+                  Sicherheit
+                </h2>
+
+                <p className="text-sm text-zinc-500">
+                  Blacklist-Überwachung
+                </p>
+              </div>
+            </div>
+
+            <div
+              className={`mt-6 rounded-2xl border p-5 ${
+                statistics.blacklistTotal > 0
+                  ? "border-red-500/30 bg-red-500/10"
+                  : "border-green-500/20 bg-green-500/5"
+              }`}
+            >
+              <p
+                className={`text-4xl font-black ${
+                  statistics.blacklistTotal > 0
+                    ? "text-red-300"
+                    : "text-green-300"
+                }`}
+              >
+                {statistics.blacklistTotal}
+              </p>
+
+              <p className="mt-2 text-sm text-zinc-400">
+                {statistics.blacklistTotal === 0
+                  ? "Keine Personen auf der Blacklist."
+                  : "Beim Einlass besonders beachten."}
+              </p>
+            </div>
+          </Card>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function EventStatus({
+  countdown,
+}: {
+  countdown: Countdown;
+}) {
+  if (countdown.finished) {
+    return (
+      <Badge variant="neutral">
+        Event beendet
+      </Badge>
+    );
+  }
+
+  if (countdown.started) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-green-500/30 bg-green-500/10 px-5 py-4">
+        <span className="h-3 w-3 animate-pulse rounded-full bg-green-400" />
+
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-green-400">
+            Live
+          </p>
+
+          <p className="font-black text-green-200">
+            Party läuft
           </p>
         </div>
       </div>
@@ -211,254 +631,209 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10">
-      <div className="mb-8 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-green-400" />
+    <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 px-5 py-4">
+      <p className="text-xs font-bold uppercase tracking-wider text-yellow-400">
+        Countdown
+      </p>
 
-            <p className="font-semibold text-green-400">
-              Live verbunden
-            </p>
-          </div>
-
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-            Dashboard
-          </h1>
-
-          <p className="mt-2 text-zinc-400">
-            Live-Übersicht über Gäste und Check-Ins.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          {lastUpdated && (
-            <p className="text-sm text-zinc-500">
-              Aktualisiert um{" "}
-              {lastUpdated.toLocaleTimeString("de-CH", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })}
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={() => loadData(true)}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2 font-bold text-zinc-300 transition hover:bg-zinc-900 hover:text-white"
-          >
-            <RefreshCcw size={18} />
-            Aktualisieren
-          </button>
-        </div>
-      </div>
-
-      {errorMessage && (
-        <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-          Daten konnten nicht geladen werden: {errorMessage}
-        </div>
-      )}
-
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          icon={<Users size={22} />}
-          title="Personen total"
-          value={statistics.totalPeople}
-          description={`${statistics.totalMainGuests} Hauptgäste · ${statistics.totalCompanions} Begleitungen`}
-        />
-
-        <StatCard
-          icon={<CheckCircle2 size={22} />}
-          title="Eingecheckt"
-          value={statistics.checkedTotal}
-          description={`${statistics.percentage}% angekommen`}
-        />
-
-        <StatCard
-          icon={<Clock3 size={22} />}
-          title="Noch offen"
-          value={statistics.openTotal}
-          description="Noch nicht eingecheckt"
-        />
-
-        <StatCard
-          icon={<Crown size={22} />}
-          title="VIP"
-          value={statistics.vipTotal}
-          description="Erfasste VIP-Hauptgäste"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6">
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-bold sm:text-2xl">
-                  Einlass-Fortschritt
-                </h2>
-
-                <p className="mt-1 text-sm text-zinc-500">
-                  Anteil der bereits eingecheckten Personen.
-                </p>
-              </div>
-
-              <p className="text-4xl font-black text-yellow-400">
-                {statistics.percentage}%
-              </p>
-            </div>
-
-            <div className="mt-6 h-5 overflow-hidden rounded-full bg-zinc-800">
-              <div
-                className="h-full rounded-full bg-yellow-400 transition-all duration-700"
-                style={{
-                  width: `${statistics.percentage}%`,
-                }}
-              />
-            </div>
-
-            <div className="mt-4 flex flex-col gap-2 text-sm text-zinc-400 sm:flex-row sm:justify-between">
-              <p>
-                {statistics.checkedTotal} von {statistics.totalPeople} Personen
-              </p>
-
-              <p>{statistics.openTotal} Personen noch offen</p>
-            </div>
-          </section>
-
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <DetailCard
-              icon={<UserRound size={20} />}
-              title="Hauptgäste drin"
-              value={statistics.checkedMainGuests}
-            />
-
-            <DetailCard
-              icon={<Users size={20} />}
-              title="Begleitungen drin"
-              value={statistics.checkedCompanions}
-            />
-
-            <DetailCard
-              icon={<ShieldCheck size={20} />}
-              title="Helfer"
-              value={statistics.helperTotal}
-            />
-          </section>
-
-          {statistics.blacklistTotal > 0 && (
-            <section className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5">
-              <p className="font-bold text-red-300">
-                Achtung: {statistics.blacklistTotal} Einträge sind als Blacklist
-                markiert.
-              </p>
-            </section>
-          )}
-        </div>
-
-        <section className="h-fit rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6 2xl:sticky 2xl:top-6">
-          <div className="flex items-center gap-3">
-            <Clock3 className="text-yellow-400" size={22} />
-
-            <div>
-              <h2 className="text-xl font-bold sm:text-2xl">
-                Letzte Check-Ins
-              </h2>
-
-              <p className="text-sm text-zinc-500">
-                Wird auf allen Geräten live aktualisiert.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {recentCheckIns.map((person, index) => (
-              <div
-                key={`${person.type}-${person.id}`}
-                className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-500/10 font-bold text-green-400">
-                  {index + 1}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-bold">{person.name}</p>
-
-                  <p className="text-sm text-zinc-500">
-                    {person.type}
-                  </p>
-                </div>
-
-                <p className="shrink-0 text-sm font-semibold text-zinc-300">
-                  {new Date(person.checked_in_at).toLocaleTimeString("de-CH", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </p>
-              </div>
-            ))}
-
-            {recentCheckIns.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-zinc-800 p-7 text-center text-zinc-500">
-                Noch keine Check-Ins vorhanden.
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
+      <p className="mt-1 font-black text-yellow-200">
+        Die Party beginnt bald
+      </p>
     </div>
   );
 }
 
-function StatCard({
+function CountdownUnit({
+  value,
+  label,
+}: {
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4 text-center">
+      <p className="text-3xl font-black tabular-nums sm:text-4xl">
+        {String(value).padStart(2, "0")}
+      </p>
+
+      <p className="mt-1 text-xs font-bold uppercase tracking-wider text-zinc-600">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function MetricCard({
   icon,
   title,
   value,
   description,
+  variant,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   value: number;
   description: string;
+  variant: "neutral" | "success" | "vip" | "info";
 }) {
+  const iconStyles = {
+    neutral: "bg-zinc-800 text-zinc-300",
+    success: "bg-green-500/10 text-green-400",
+    vip: "bg-yellow-400/10 text-yellow-400",
+    info: "bg-blue-500/10 text-blue-400",
+  };
+
   return (
-    <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-400">
+    <Card hover padding="small">
+      <div
+        className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconStyles[variant]}`}
+      >
         {icon}
       </div>
 
-      <p className="mt-5 text-sm font-semibold text-zinc-400">
+      <p className="mt-4 text-sm font-semibold text-zinc-500">
         {title}
       </p>
 
-      <p className="mt-1 text-4xl font-black tracking-tight">
+      <p className="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
         {value}
       </p>
 
-      <p className="mt-2 text-sm text-zinc-500">
+      <p className="mt-2 text-xs leading-5 text-zinc-600 sm:text-sm">
         {description}
       </p>
+    </Card>
+  );
+}
+
+function RecentCheckInRow({
+  person,
+  position,
+}: {
+  person: RecentCheckIn;
+  position: number;
+}) {
+  return (
+    <div className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-black/20 p-4 transition hover:border-zinc-700 hover:bg-zinc-900">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-500/10 font-black text-green-400">
+        {position}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-black">
+          {person.name}
+        </p>
+
+        <p className="mt-1 text-sm text-zinc-500">
+          {person.type}
+        </p>
+      </div>
+
+      <div className="text-right">
+        <p className="font-bold tabular-nums text-zinc-300">
+          {formatClock(new Date(person.checked_in_at))}
+        </p>
+
+        <p className="mt-1 text-xs text-zinc-600">
+          Eingecheckt
+        </p>
+      </div>
     </div>
   );
 }
 
-function DetailCard({
-  icon,
-  title,
+function StatusRow({
+  label,
   value,
+  status,
 }: {
-  icon: React.ReactNode;
-  title: string;
-  value: number;
+  label: string;
+  value: string;
+  status: "success" | "neutral";
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-      <div className="text-yellow-400">{icon}</div>
+    <div className="flex items-center justify-between gap-4">
+      <p className="text-sm text-zinc-500">
+        {label}
+      </p>
 
-      <p className="mt-4 text-sm text-zinc-500">{title}</p>
+      <div className="flex items-center gap-2">
+        <span
+          className={`h-2 w-2 rounded-full ${
+            status === "success"
+              ? "bg-green-400"
+              : "bg-zinc-500"
+          }`}
+        />
 
-      <p className="mt-1 text-3xl font-black">{value}</p>
+        <p className="text-sm font-bold text-zinc-300">
+          {value}
+        </p>
+      </div>
     </div>
   );
+}
+
+function calculateCountdown(
+  currentDate: Date,
+  eventDate: Date
+): Countdown {
+  const difference = eventDate.getTime() - currentDate.getTime();
+
+  const eventEndDate = new Date(eventDate);
+  eventEndDate.setHours(eventEndDate.getHours() + 12);
+
+  if (currentDate.getTime() > eventEndDate.getTime()) {
+    return {
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      started: false,
+      finished: true,
+    };
+  }
+
+  if (difference <= 0) {
+    return {
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      started: true,
+      finished: false,
+    };
+  }
+
+  const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+
+  const hours = Math.floor(
+    (difference / (1000 * 60 * 60)) % 24
+  );
+
+  const minutes = Math.floor(
+    (difference / (1000 * 60)) % 60
+  );
+
+  const seconds = Math.floor(
+    (difference / 1000) % 60
+  );
+
+  return {
+    days,
+    hours,
+    minutes,
+    seconds,
+    started: false,
+    finished: false,
+  };
+}
+
+function formatClock(date: Date) {
+  return date.toLocaleTimeString("de-CH", {
+    timeZone: "Europe/Zurich",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
