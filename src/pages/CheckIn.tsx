@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   Camera,
   CameraOff,
+  Check,
   CheckCircle2,
   Clock3,
   Search,
   TicketCheck,
   User,
+  X,
+  XCircle,
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -21,6 +24,7 @@ type Person = {
   ticket_code: string;
   checked_in: boolean;
   checked_in_at: string | null;
+  category?: string | null;
 };
 
 type RecentCheckIn = {
@@ -30,9 +34,17 @@ type RecentCheckIn = {
   checked_in_at: string;
 };
 
+type ScannerFeedback = {
+  status: "success" | "error";
+  title: string;
+  description: string;
+  person: Person | null;
+};
+
 export default function CheckIn() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanLockedRef = useRef(false);
+  const feedbackTimeoutRef = useRef<number | null>(null);
 
   const [people, setPeople] = useState<Person[]>([]);
   const [recentCheckIns, setRecentCheckIns] = useState<RecentCheckIn[]>([]);
@@ -47,12 +59,17 @@ export default function CheckIn() {
   const [messageType, setMessageType] = useState<
     "success" | "warning" | "error" | ""
   >("");
+
   const [lastPerson, setLastPerson] = useState<Person | null>(null);
+  const [scannerFeedback, setScannerFeedback] =
+    useState<ScannerFeedback | null>(null);
 
   async function loadPeople() {
     const { data: guests, error: guestError } = await supabase
       .from("guests")
-      .select("id, name, ticket_code, checked_in, checked_in_at")
+      .select(
+        "id, name, ticket_code, checked_in, checked_in_at, category"
+      )
       .order("name", { ascending: true });
 
     if (guestError) {
@@ -82,6 +99,7 @@ export default function CheckIn() {
         ticket_code: guest.ticket_code,
         checked_in: guest.checked_in,
         checked_in_at: guest.checked_in_at,
+        category: guest.category,
       })) ?? [];
 
     const companionPeople: Person[] =
@@ -92,6 +110,7 @@ export default function CheckIn() {
         ticket_code: companion.ticket_code,
         checked_in: companion.checked_in,
         checked_in_at: companion.checked_in_at,
+        category: null,
       })) ?? [];
 
     const allPeople = [...guestPeople, ...companionPeople];
@@ -126,7 +145,9 @@ export default function CheckIn() {
 
     const { data: guest, error: guestError } = await supabase
       .from("guests")
-      .select("id, name, ticket_code, checked_in, checked_in_at")
+      .select(
+        "id, name, ticket_code, checked_in, checked_in_at, category"
+      )
       .eq("ticket_code", cleanCode)
       .maybeSingle();
 
@@ -142,6 +163,7 @@ export default function CheckIn() {
         ticket_code: guest.ticket_code,
         checked_in: guest.checked_in,
         checked_in_at: guest.checked_in_at,
+        category: guest.category,
       };
     }
 
@@ -166,7 +188,31 @@ export default function CheckIn() {
       ticket_code: companion.ticket_code,
       checked_in: companion.checked_in,
       checked_in_at: companion.checked_in_at,
+      category: null,
     };
+  }
+
+  function showScannerFeedback(feedback: ScannerFeedback) {
+    if (feedbackTimeoutRef.current !== null) {
+      window.clearTimeout(feedbackTimeoutRef.current);
+    }
+
+    setScannerFeedback(feedback);
+
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setScannerFeedback(null);
+      feedbackTimeoutRef.current = null;
+    }, 2500);
+  }
+
+  function playFeedback(status: "success" | "error") {
+    if ("vibrate" in navigator) {
+      if (status === "success") {
+        navigator.vibrate(150);
+      } else {
+        navigator.vibrate([180, 100, 180]);
+      }
+    }
   }
 
   async function handleTicket(ticketCode: string) {
@@ -192,6 +238,15 @@ export default function CheckIn() {
         setMessage("Ticket wurde nicht gefunden.");
         setMessageType("error");
         setLastPerson(null);
+
+        showScannerFeedback({
+          status: "error",
+          title: "Ungültiges Ticket",
+          description: "Dieser QR-Code ist nicht im System vorhanden.",
+          person: null,
+        });
+
+        playFeedback("error");
         return;
       }
 
@@ -203,18 +258,54 @@ export default function CheckIn() {
       setMessage(`Check-In fehlgeschlagen: ${errorMessage}`);
       setMessageType("error");
       setLastPerson(null);
+
+      showScannerFeedback({
+        status: "error",
+        title: "Check-In fehlgeschlagen",
+        description: errorMessage,
+        person: null,
+      });
+
+      playFeedback("error");
     } finally {
       window.setTimeout(() => {
         scanLockedRef.current = false;
-      }, 2000);
+      }, 2200);
     }
   }
 
   async function checkInPerson(person: Person) {
+    if (person.category === "Blacklist") {
+      setLastPerson(person);
+      setMessage("Diese Person ist auf der Blacklist.");
+      setMessageType("error");
+
+      showScannerFeedback({
+        status: "error",
+        title: "Zutritt verweigern",
+        description: "Diese Person ist als Blacklist markiert.",
+        person,
+      });
+
+      playFeedback("error");
+      return;
+    }
+
     if (person.checked_in) {
       setLastPerson(person);
       setMessage("Diese Person ist bereits eingecheckt.");
       setMessageType("warning");
+
+      showScannerFeedback({
+        status: "error",
+        title: "Bereits eingecheckt",
+        description: person.checked_in_at
+          ? `Check-In war um ${formatTime(person.checked_in_at)} Uhr.`
+          : "Dieses Ticket wurde bereits verwendet.",
+        person,
+      });
+
+      playFeedback("error");
       return;
     }
 
@@ -232,6 +323,15 @@ export default function CheckIn() {
     if (error) {
       setMessage(`Check-In fehlgeschlagen: ${error.message}`);
       setMessageType("error");
+
+      showScannerFeedback({
+        status: "error",
+        title: "Check-In fehlgeschlagen",
+        description: error.message,
+        person,
+      });
+
+      playFeedback("error");
       return;
     }
 
@@ -247,10 +347,14 @@ export default function CheckIn() {
     setManualCode("");
     setSearch("");
 
-    if ("vibrate" in navigator) {
-      navigator.vibrate(150);
-    }
+    showScannerFeedback({
+      status: "success",
+      title: "Check-In erfolgreich",
+      description: "Das Ticket ist gültig und wurde verwendet.",
+      person: updatedPerson,
+    });
 
+    playFeedback("success");
     await loadPeople();
   }
 
@@ -285,14 +389,16 @@ export default function CheckIn() {
           await handleTicket(decodedText);
         },
         () => {
-          // Scan-Fehler während der Kamerasuche absichtlich ignorieren.
+          // Normale Suchfehler der Kamera werden nicht angezeigt.
         }
       );
 
       setScannerRunning(true);
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : "Kamera konnte nicht starten.";
+        error instanceof Error
+          ? error.message
+          : "Kamera konnte nicht gestartet werden.";
 
       setMessage(
         `Kamera konnte nicht gestartet werden. Prüfe die Browser-Berechtigung. ${errorMessage}`
@@ -314,10 +420,11 @@ export default function CheckIn() {
       await scanner.stop();
       await scanner.clear();
     } catch {
-      // Scanner ist eventuell bereits gestoppt.
+      // Scanner wurde möglicherweise bereits gestoppt.
     } finally {
       scannerRef.current = null;
       setScannerRunning(false);
+      setScannerFeedback(null);
     }
   }
 
@@ -326,6 +433,10 @@ export default function CheckIn() {
 
     return () => {
       const scanner = scannerRef.current;
+
+      if (feedbackTimeoutRef.current !== null) {
+        window.clearTimeout(feedbackTimeoutRef.current);
+      }
 
       if (scanner?.isScanning) {
         scanner.stop().catch(() => {});
@@ -367,7 +478,9 @@ export default function CheckIn() {
           <section className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
             <div className="flex flex-col gap-4 border-b border-zinc-800 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-xl font-bold sm:text-2xl">QR-Scanner</h2>
+                <h2 className="text-xl font-bold sm:text-2xl">
+                  QR-Scanner
+                </h2>
 
                 <p className="mt-1 text-sm text-zinc-500">
                   Nutzt bevorzugt die Rückkamera des Handys.
@@ -398,11 +511,86 @@ export default function CheckIn() {
             </div>
 
             <div className="p-4 sm:p-6">
-              <div className="mx-auto max-w-xl overflow-hidden rounded-2xl bg-black">
+              <div className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-zinc-800 bg-black">
                 <div
                   id="partycontrol-qr-reader"
-                  className="min-h-[280px] w-full"
+                  className="min-h-[300px] w-full"
                 />
+
+                {scannerFeedback && (
+                  <div className="absolute inset-x-3 bottom-3 z-20 sm:inset-x-5 sm:bottom-5">
+                    <div
+                      className={`rounded-2xl border p-5 shadow-2xl backdrop-blur-xl ${
+                        scannerFeedback.status === "success"
+                          ? "border-green-400/50 bg-green-950/95"
+                          : "border-red-400/50 bg-red-950/95"
+                      }`}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div
+                          className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full ${
+                            scannerFeedback.status === "success"
+                              ? "bg-green-400 text-green-950"
+                              : "bg-red-400 text-red-950"
+                          }`}
+                        >
+                          {scannerFeedback.status === "success" ? (
+                            <Check size={38} strokeWidth={3} />
+                          ) : (
+                            <X size={38} strokeWidth={3} />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`text-xl font-black ${
+                              scannerFeedback.status === "success"
+                                ? "text-green-300"
+                                : "text-red-300"
+                            }`}
+                          >
+                            {scannerFeedback.title}
+                          </p>
+
+                          {scannerFeedback.person && (
+                            <>
+                              <p className="mt-1 truncate text-2xl font-black text-white">
+                                {scannerFeedback.person.name}
+                              </p>
+
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                                  {scannerFeedback.person.type}
+                                </span>
+
+                                {scannerFeedback.person.category &&
+                                  scannerFeedback.person.category !==
+                                    "Normal" && (
+                                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                                      {scannerFeedback.person.category}
+                                    </span>
+                                  )}
+                              </div>
+                            </>
+                          )}
+
+                          <p className="mt-2 text-sm text-white/70">
+                            {scannerFeedback.description}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setScannerFeedback(null)}
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+                          aria-label="Meldung schliessen"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {!scannerRunning && !scannerLoading && (
@@ -420,6 +608,8 @@ export default function CheckIn() {
               <div className="flex items-start gap-3">
                 {messageType === "success" ? (
                   <CheckCircle2 className="mt-1 shrink-0" size={24} />
+                ) : messageType === "error" ? (
+                  <XCircle className="mt-1 shrink-0" size={24} />
                 ) : (
                   <TicketCheck className="mt-1 shrink-0" size={24} />
                 )}
@@ -429,21 +619,21 @@ export default function CheckIn() {
 
                   {lastPerson && (
                     <div className="mt-3">
-                      <p className="text-2xl font-black">{lastPerson.name}</p>
+                      <p className="text-2xl font-black">
+                        {lastPerson.name}
+                      </p>
+
                       <p className="mt-1 text-sm opacity-80">
                         {lastPerson.type}
+                        {lastPerson.category &&
+                          lastPerson.category !== "Normal" &&
+                          ` · ${lastPerson.category}`}
                       </p>
 
                       {lastPerson.checked_in_at && (
                         <p className="mt-2 text-sm opacity-80">
                           Check-In um{" "}
-                          {new Date(
-                            lastPerson.checked_in_at
-                          ).toLocaleTimeString("de-CH", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
+                          {formatTime(lastPerson.checked_in_at)} Uhr
                         </p>
                       )}
                     </div>
@@ -484,7 +674,10 @@ export default function CheckIn() {
           <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6">
             <div className="flex items-center gap-3">
               <Search className="text-yellow-400" size={22} />
-              <h2 className="text-xl font-bold sm:text-2xl">Namenssuche</h2>
+
+              <h2 className="text-xl font-bold sm:text-2xl">
+                Namenssuche
+              </h2>
             </div>
 
             <input
@@ -511,6 +704,9 @@ export default function CheckIn() {
 
                         <p className="text-sm text-zinc-500">
                           {person.type}
+                          {person.category &&
+                            person.category !== "Normal" &&
+                            ` · ${person.category}`}
                         </p>
                       </div>
                     </div>
@@ -522,10 +718,16 @@ export default function CheckIn() {
                       className={`min-h-11 rounded-xl px-4 py-2 font-bold ${
                         person.checked_in
                           ? "cursor-not-allowed bg-zinc-800 text-zinc-500"
-                          : "bg-yellow-400 text-black hover:bg-yellow-300"
+                          : person.category === "Blacklist"
+                            ? "bg-red-500/20 text-red-300"
+                            : "bg-yellow-400 text-black hover:bg-yellow-300"
                       }`}
                     >
-                      {person.checked_in ? "Bereits drin" : "Einchecken"}
+                      {person.checked_in
+                        ? "Bereits drin"
+                        : person.category === "Blacklist"
+                          ? "Gesperrt"
+                          : "Einchecken"}
                     </button>
                   </div>
                 ))}
@@ -574,10 +776,7 @@ export default function CheckIn() {
                 </div>
 
                 <p className="shrink-0 text-sm font-semibold text-zinc-300">
-                  {new Date(checkIn.checked_in_at).toLocaleTimeString("de-CH", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatTime(checkIn.checked_in_at)}
                 </p>
               </div>
             ))}
@@ -592,4 +791,11 @@ export default function CheckIn() {
       </div>
     </div>
   );
+}
+
+function formatTime(date: string) {
+  return new Date(date).toLocaleTimeString("de-CH", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
