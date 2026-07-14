@@ -12,8 +12,13 @@ import CheckIn from "./pages/CheckIn";
 import ImportGuests from "./pages/ImportGuests";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
+import Music from "./pages/Music";
+import PublicMusic from "./pages/PublicMusic";
 
 function App() {
+  const searchParameters = new URLSearchParams(window.location.search);
+  const publicView = searchParameters.get("view");
+
   const [session, setSession] = useState<Session | null>(null);
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +26,11 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (publicView === "music") {
+      setLoading(false);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
@@ -36,19 +46,24 @@ function App() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [publicView]);
 
   function changePage(newPage: string) {
     setPage(newPage);
     setSidebarOpen(false);
   }
 
+  if (publicView === "music") {
+    return <PublicMusic />;
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-zinc-800 border-t-yellow-400 rounded-full animate-spin mx-auto" />
-          <p className="text-zinc-400 mt-4">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-zinc-800 border-t-yellow-400" />
+
+          <p className="mt-4 text-zinc-400">
             PartyControl wird geladen...
           </p>
         </div>
@@ -82,7 +97,7 @@ function App() {
         }
       />
 
-      <main className="flex-1 min-w-0 overflow-x-hidden">
+      <main className="min-w-0 flex-1 overflow-x-hidden">
         <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-zinc-900 bg-black/90 px-4 py-3 backdrop-blur-xl lg:hidden">
           <button
             type="button"
@@ -94,8 +109,13 @@ function App() {
           </button>
 
           <div>
-            <p className="font-black tracking-tight">PartyControl</p>
-            <p className="text-xs text-zinc-500">Event Management</p>
+            <p className="font-black tracking-tight">
+              PartyControl
+            </p>
+
+            <p className="text-xs text-zinc-500">
+              Event Management
+            </p>
           </div>
         </header>
 
@@ -104,27 +124,20 @@ function App() {
         {page === "import" && <ImportGuests />}
         {page === "tickets" && <Tickets />}
         {page === "checkin" && <CheckIn />}
-
-        {page === "music" && (
-          <div className="p-5 sm:p-8 lg:p-10">
-            <p className="text-yellow-400 font-semibold mb-2">Musik</p>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
-              Musikwünsche
-            </h1>
-            <p className="text-zinc-400 mt-2">
-              Diese Funktion erstellen wir später.
-            </p>
-          </div>
-        )}
+        {page === "music" && <Music />}
 
         {page === "photos" && (
           <div className="p-5 sm:p-8 lg:p-10">
-            <p className="text-yellow-400 font-semibold mb-2">Galerie</p>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
+            <p className="mb-2 font-semibold text-yellow-400">
+              Galerie
+            </p>
+
+            <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
               Fotowand
             </h1>
-            <p className="text-zinc-400 mt-2">
-              Diese Funktion erstellen wir später.
+
+            <p className="mt-2 text-zinc-400">
+              Diese Funktion erstellen wir als Nächstes.
             </p>
           </div>
         )}
