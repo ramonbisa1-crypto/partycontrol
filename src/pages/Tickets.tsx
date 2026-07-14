@@ -1,21 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { QRCodeCanvas } from "qrcode.react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
   Download,
   Printer,
   RefreshCcw,
+  Search,
   Ticket as TicketIcon,
   Users,
 } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 import { toPng } from "html-to-image";
 
 import { supabase } from "../lib/supabase";
 
+import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import EmptyState from "../components/ui/EmptyState";
+import LoadingState from "../components/ui/LoadingState";
+import PageHeader from "../components/ui/PageHeader";
+import { useToast } from "../components/ui/ToastProvider";
+
 type GuestTicket = {
   id: string;
   name: string;
+  category: "Normal" | "VIP" | "Helfer" | "Blacklist";
   ticket_code: string;
   checked_in: boolean;
 };
@@ -37,48 +47,72 @@ type TicketCardProps = {
   id: string;
   name: string;
   type: "Hauptgast" | "Begleitung";
+  category?: GuestTicket["category"];
   ticketCode: string;
   checkedIn: boolean;
   onDownload: () => void;
 };
 
 export default function Tickets() {
+  const { showToast } = useToast();
+
   const [groups, setGroups] = useState<TicketGroup[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [expandedGuestId, setExpandedGuestId] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [expandedGuestId, setExpandedGuestId] =
+    useState<string | null>(null);
 
-  async function loadTickets() {
-    setLoading(true);
-    setErrorMessage("");
+  async function loadTickets(showLoading = false) {
+    if (showLoading) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
 
     const [guestResult, companionResult] = await Promise.all([
       supabase
         .from("guests")
-        .select("id, name, ticket_code, checked_in")
+        .select(
+          "id, name, category, ticket_code, checked_in"
+        )
         .order("name", { ascending: true }),
 
       supabase
         .from("companions")
-        .select("id, guest_id, name, ticket_code, checked_in")
+        .select(
+          "id, guest_id, name, ticket_code, checked_in"
+        )
         .order("name", { ascending: true }),
     ]);
 
     if (guestResult.error) {
-      setErrorMessage(guestResult.error.message);
+      showToast({
+        type: "error",
+        title: "Tickets konnten nicht geladen werden",
+        message: guestResult.error.message,
+      });
+
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
     if (companionResult.error) {
-      setErrorMessage(companionResult.error.message);
+      showToast({
+        type: "error",
+        title: "Begleitungen konnten nicht geladen werden",
+        message: companionResult.error.message,
+      });
+
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
-    const guests: GuestTicket[] = guestResult.data ?? [];
-    const companions: CompanionTicket[] = companionResult.data ?? [];
+    const guests = (guestResult.data ?? []) as GuestTicket[];
+    const companions =
+      (companionResult.data ?? []) as CompanionTicket[];
 
     const ticketGroups = guests.map((guest) => ({
       guest,
@@ -89,10 +123,41 @@ export default function Tickets() {
 
     setGroups(ticketGroups);
     setLoading(false);
+    setRefreshing(false);
   }
 
   useEffect(() => {
-    loadTickets();
+    loadTickets(true);
+
+    const channel = supabase
+      .channel("professional-tickets-page")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "guests",
+        },
+        () => {
+          loadTickets();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "companions",
+        },
+        () => {
+          loadTickets();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const filteredGroups = useMemo(() => {
@@ -103,23 +168,61 @@ export default function Tickets() {
     }
 
     return groups.filter((group) => {
-      const guestMatches = group.guest.name
-        .toLowerCase()
-        .includes(cleanSearch);
+      const guestMatches =
+        group.guest.name.toLowerCase().includes(cleanSearch);
 
-      const companionMatches = group.companions.some((companion) =>
-        companion.name.toLowerCase().includes(cleanSearch)
+      const companionMatches = group.companions.some(
+        (companion) =>
+          companion.name.toLowerCase().includes(cleanSearch)
       );
 
       return guestMatches || companionMatches;
     });
   }, [groups, search]);
 
-  async function downloadTicket(elementId: string, name: string) {
+  const statistics = useMemo(() => {
+    const mainGuests = groups.length;
+
+    const companions = groups.reduce(
+      (total, group) => total + group.companions.length,
+      0
+    );
+
+    const total = mainGuests + companions;
+
+    const used = groups.reduce((total, group) => {
+      const guestUsed = group.guest.checked_in ? 1 : 0;
+
+      const companionUsed = group.companions.filter(
+        (companion) => companion.checked_in
+      ).length;
+
+      return total + guestUsed + companionUsed;
+    }, 0);
+
+    return {
+      mainGuests,
+      companions,
+      total,
+      used,
+      open: Math.max(total - used, 0),
+    };
+  }, [groups]);
+
+  async function downloadTicket(
+    elementId: string,
+    personName: string
+  ) {
     const element = document.getElementById(elementId);
 
     if (!element) {
-      alert("Ticket konnte nicht gefunden werden.");
+      showToast({
+        type: "error",
+        title: "Ticket nicht gefunden",
+        message:
+          "Das Ticket konnte nicht für den Export vorbereitet werden.",
+      });
+
       return;
     }
 
@@ -131,14 +234,28 @@ export default function Tickets() {
       });
 
       const link = document.createElement("a");
-      link.download = `${createSafeFilename(name)}-ticket.png`;
+      link.download = `${createSafeFilename(
+        personName
+      )}-party-ticket.png`;
       link.href = dataUrl;
       link.click();
+
+      showToast({
+        type: "success",
+        title: "Ticket gespeichert",
+        message: `Das Ticket für ${personName} wurde als PNG erstellt.`,
+      });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unbekannter Fehler";
+        error instanceof Error
+          ? error.message
+          : "Unbekannter Fehler";
 
-      alert(`Ticket konnte nicht gespeichert werden: ${message}`);
+      showToast({
+        type: "error",
+        title: "PNG-Export fehlgeschlagen",
+        message,
+      });
     }
   }
 
@@ -147,188 +264,212 @@ export default function Tickets() {
 
     window.setTimeout(() => {
       window.print();
-    }, 150);
+    }, 180);
   }
-
-  const totalTickets = groups.reduce(
-    (sum, group) => sum + 1 + group.companions.length,
-    0
-  );
 
   if (loading) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center p-5">
-        <div className="text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-zinc-800 border-t-yellow-400" />
-
-          <p className="mt-4 text-zinc-400">
-            Tickets werden geladen...
-          </p>
-        </div>
-      </div>
+      <LoadingState
+        title="Tickets werden geladen"
+        description="Die Ticketgruppen werden vorbereitet."
+      />
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10">
-      <div className="no-print mb-8 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="mb-2 font-semibold text-yellow-400">
-            Ticket-Verteilung
-          </p>
+    <div className="page-enter p-4 sm:p-6 lg:p-10">
+      <PageHeader
+        eyebrow="Ticket-Verteilung"
+        title="Tickets"
+        description="Verwalte QR-Tickets für Hauptgäste und Begleitungen, exportiere einzelne Tickets oder drucke ganze Gruppen."
+        actions={
+          <Button
+            variant="secondary"
+            icon={<RefreshCcw size={18} />}
+            loading={refreshing}
+            onClick={() => loadTickets()}
+          >
+            Aktualisieren
+          </Button>
+        }
+      />
 
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-            Tickets
-          </h1>
+      <section className="no-print mb-7 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <SummaryCard
+          title="Hauptgäste"
+          value={statistics.mainGuests}
+          icon={<Users size={21} />}
+        />
 
-          <p className="mt-2 text-zinc-400">
-            Hauptgäste und Begleitungen sind als Gruppen organisiert.
-          </p>
-        </div>
+        <SummaryCard
+          title="Begleitungen"
+          value={statistics.companions}
+          icon={<Users size={21} />}
+        />
 
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <input
-            className="min-h-12 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 outline-none transition focus:border-yellow-400 sm:w-80"
-            placeholder="Gast oder Begleitung suchen..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+        <SummaryCard
+          title="Tickets total"
+          value={statistics.total}
+          icon={<TicketIcon size={21} />}
+        />
+
+        <SummaryCard
+          title="Noch offen"
+          value={statistics.open}
+          icon={<TicketIcon size={21} />}
+        />
+      </section>
+
+      <Card className="no-print mb-6" padding="small">
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+            size={18}
           />
 
-          <button
-            type="button"
-            onClick={loadTickets}
-            className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-5 py-3 font-bold transition hover:bg-zinc-900"
-          >
-            <RefreshCcw size={18} />
-            Aktualisieren
-          </button>
+          <input
+            className="app-input pl-11"
+            placeholder="Hauptgast oder Begleitung suchen..."
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+          />
         </div>
-      </div>
+      </Card>
 
-      {errorMessage && (
-        <div className="no-print mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-          Tickets konnten nicht geladen werden: {errorMessage}
-        </div>
-      )}
-
-      <div className="no-print mb-7 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <SummaryCard
-          icon={<Users size={21} />}
-          title="Hauptgäste"
-          value={groups.length}
+      {filteredGroups.length === 0 ? (
+        <EmptyState
+          icon={<TicketIcon size={29} />}
+          title="Keine Tickets gefunden"
+          description="Passe die Suche an oder erfasse zuerst neue Gäste."
         />
+      ) : (
+        <div className="space-y-4">
+          {filteredGroups.map((group) => {
+            const isExpanded =
+              expandedGuestId === group.guest.id;
 
-        <SummaryCard
-          icon={<TicketIcon size={21} />}
-          title="Tickets total"
-          value={totalTickets}
-        />
+            const ticketCount =
+              group.companions.length + 1;
 
-        <SummaryCard
-          icon={<Users size={21} />}
-          title="Begleitungen"
-          value={Math.max(totalTickets - groups.length, 0)}
-        />
-      </div>
+            const checkedInCount =
+              (group.guest.checked_in ? 1 : 0) +
+              group.companions.filter(
+                (companion) => companion.checked_in
+              ).length;
 
-      <div className="space-y-4">
-        {filteredGroups.map((group) => {
-          const isExpanded = expandedGuestId === group.guest.id;
-          const groupTicketCount = group.companions.length + 1;
-
-          return (
-            <section
-              key={group.guest.id}
-              className="rounded-3xl border border-zinc-800 bg-zinc-950"
-            >
-              <div className="no-print flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandedGuestId(
-                      isExpanded ? null : group.guest.id
-                    )
-                  }
-                  className="flex flex-1 items-center gap-4 text-left"
-                >
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-yellow-400/10 text-yellow-400">
-                    <Users size={22} />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-lg font-black">
-                      {group.guest.name}
-                    </p>
-
-                    <p className="mt-1 text-sm text-zinc-500">
-                      {groupTicketCount} Ticket
-                      {groupTicketCount !== 1 ? "s" : ""} ·{" "}
-                      {group.companions.length} Begleitung
-                      {group.companions.length !== 1 ? "en" : ""}
-                    </p>
-                  </div>
-
-                  {isExpanded ? (
-                    <ChevronUp className="shrink-0 text-zinc-500" />
-                  ) : (
-                    <ChevronDown className="shrink-0 text-zinc-500" />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => printGroup(group.guest.id)}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 font-bold transition hover:bg-zinc-800"
-                >
-                  <Printer size={18} />
-                  Gruppe drucken
-                </button>
-              </div>
-
-              {isExpanded && (
-                <div className="ticket-print-grid grid grid-cols-1 gap-6 border-t border-zinc-800 p-5 md:grid-cols-2 xl:grid-cols-3">
-                  <TicketCard
-                    id={`ticket-guest-${group.guest.id}`}
-                    name={group.guest.name}
-                    type="Hauptgast"
-                    ticketCode={group.guest.ticket_code}
-                    checkedIn={group.guest.checked_in}
-                    onDownload={() =>
-                      downloadTicket(
-                        `ticket-guest-${group.guest.id}`,
-                        group.guest.name
+            return (
+              <Card
+                key={group.guest.id}
+                padding="none"
+                className="overflow-hidden"
+              >
+                <div className="no-print flex flex-col gap-4 p-5 sm:p-6 lg:flex-row lg:items-center">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedGuestId(
+                        isExpanded
+                          ? null
+                          : group.guest.id
                       )
                     }
-                  />
+                    className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                  >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-yellow-400/10 text-yellow-400">
+                      <Users size={22} />
+                    </div>
 
-                  {group.companions.map((companion) => (
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-lg font-black">
+                          {group.guest.name}
+                        </p>
+
+                        <CategoryBadge
+                          category={group.guest.category}
+                        />
+                      </div>
+
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {ticketCount} Ticket
+                        {ticketCount !== 1 ? "s" : ""} ·{" "}
+                        {group.companions.length} Begleitung
+                        {group.companions.length !== 1
+                          ? "en"
+                          : ""}
+                      </p>
+                    </div>
+
+                    <div className="hidden shrink-0 text-right sm:block">
+                      <p className="font-bold text-zinc-300">
+                        {checkedInCount} / {ticketCount}
+                      </p>
+
+                      <p className="text-xs text-zinc-600">
+                        verwendet
+                      </p>
+                    </div>
+
+                    {isExpanded ? (
+                      <ChevronUp className="shrink-0 text-zinc-500" />
+                    ) : (
+                      <ChevronDown className="shrink-0 text-zinc-500" />
+                    )}
+                  </button>
+
+                  <Button
+                    variant="secondary"
+                    icon={<Printer size={18} />}
+                    onClick={() =>
+                      printGroup(group.guest.id)
+                    }
+                  >
+                    Gruppe drucken
+                  </Button>
+                </div>
+
+                {isExpanded && (
+                  <div className="ticket-print-grid grid grid-cols-1 gap-6 border-t border-zinc-800 p-5 md:grid-cols-2 2xl:grid-cols-3">
                     <TicketCard
-                      key={companion.id}
-                      id={`ticket-companion-${companion.id}`}
-                      name={companion.name}
-                      type="Begleitung"
-                      ticketCode={companion.ticket_code}
-                      checkedIn={companion.checked_in}
+                      id={`ticket-guest-${group.guest.id}`}
+                      name={group.guest.name}
+                      type="Hauptgast"
+                      category={group.guest.category}
+                      ticketCode={group.guest.ticket_code}
+                      checkedIn={group.guest.checked_in}
                       onDownload={() =>
                         downloadTicket(
-                          `ticket-companion-${companion.id}`,
-                          companion.name
+                          `ticket-guest-${group.guest.id}`,
+                          group.guest.name
                         )
                       }
                     />
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
 
-        {filteredGroups.length === 0 && (
-          <div className="rounded-3xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
-            Keine passenden Tickets gefunden.
-          </div>
-        )}
-      </div>
+                    {group.companions.map((companion) => (
+                      <TicketCard
+                        key={companion.id}
+                        id={`ticket-companion-${companion.id}`}
+                        name={companion.name}
+                        type="Begleitung"
+                        ticketCode={companion.ticket_code}
+                        checkedIn={companion.checked_in}
+                        onDownload={() =>
+                          downloadTicket(
+                            `ticket-companion-${companion.id}`,
+                            companion.name
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -337,65 +478,81 @@ function TicketCard({
   id,
   name,
   type,
+  category,
   ticketCode,
   checkedIn,
   onDownload,
 }: TicketCardProps) {
-  const cardRef = useRef<HTMLDivElement | null>(null);
+  const shortCode = createShortTicketCode(ticketCode);
 
   return (
     <div className="ticket-wrapper">
       <div
         id={id}
-        ref={cardRef}
-        className="ticket-card overflow-hidden rounded-3xl border border-zinc-200 bg-white text-center shadow-2xl"
+        className="ticket-card overflow-hidden rounded-[1.75rem] border border-zinc-200 bg-white text-center shadow-2xl"
       >
-        <div className="bg-[#09090b] px-5 py-5">
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-yellow-400">
-            Birthday Party
-          </p>
+        <div className="relative overflow-hidden bg-[#09090b] px-6 py-6">
+          <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-yellow-400/10 blur-2xl" />
 
-          <p className="mt-2 text-sm text-zinc-400">
-            PartyControl · Oktober
-          </p>
+          <div className="relative">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-yellow-400">
+              Birthday Party
+            </p>
+
+            <p className="mt-2 text-sm text-zinc-400">
+              16. Oktober 2026
+            </p>
+          </div>
         </div>
 
         <div className="p-6">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <TicketTypeBadge type={type} />
+
+            {category && category !== "Normal" && (
+              <TicketCategoryBadge
+                category={category}
+              />
+            )}
+          </div>
+
           <h2
-            className="text-2xl font-black leading-tight"
+            className="mt-4 text-2xl font-black leading-tight"
             style={{ color: "#09090b" }}
           >
             {name}
           </h2>
 
-          <p
-            className="mt-1 text-sm font-semibold"
-            style={{ color: "#71717a" }}
-          >
-            {type}
-          </p>
-
-          <div className="mt-5 flex justify-center">
-            <QRCodeCanvas
-              value={ticketCode}
-              size={210}
-              level="H"
-              bgColor="#ffffff"
-              fgColor="#000000"
-            />
+          <div className="mt-6 flex justify-center">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+              <QRCodeCanvas
+                value={ticketCode}
+                size={210}
+                level="H"
+                bgColor="#ffffff"
+                fgColor="#000000"
+              />
+            </div>
           </div>
 
-          <div className="mt-5 rounded-2xl bg-zinc-100 p-3">
+          <div className="mt-5 rounded-2xl border border-zinc-200 bg-zinc-100 p-4">
             <p
-              className="text-xs font-semibold uppercase tracking-wider"
+              className="text-xs font-bold uppercase tracking-[0.16em]"
               style={{ color: "#71717a" }}
             >
               Ticket-Code
             </p>
 
             <p
-              className="mt-1 break-all font-mono text-xs"
-              style={{ color: "#27272a" }}
+              className="mt-2 font-mono text-lg font-black tracking-wider"
+              style={{ color: "#18181b" }}
+            >
+              {shortCode}
+            </p>
+
+            <p
+              className="mt-2 break-all font-mono text-[10px]"
+              style={{ color: "#a1a1aa" }}
             >
               {ticketCode}
             </p>
@@ -408,41 +565,151 @@ function TicketCard({
                 : "bg-yellow-100 text-yellow-700"
             }`}
           >
-            {checkedIn ? "Bereits eingecheckt" : "Noch offen"}
+            {checkedIn
+              ? "Bereits eingecheckt"
+              : "Noch offen"}
           </div>
+
+          <p
+            className="mt-5 text-xs"
+            style={{ color: "#a1a1aa" }}
+          >
+            Dieses Ticket ist persönlich und nur einmal gültig.
+          </p>
         </div>
       </div>
 
-      <button
-        type="button"
+      <Button
+        className="no-print mt-3"
+        fullWidth
+        icon={<Download size={18} />}
         onClick={onDownload}
-        className="no-print mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 font-bold text-black transition hover:bg-yellow-300"
       >
-        <Download size={18} />
         Als PNG speichern
-      </button>
+      </Button>
     </div>
   );
 }
 
 function SummaryCard({
-  icon,
   title,
   value,
+  icon,
 }: {
-  icon: React.ReactNode;
   title: string;
   value: number;
+  icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-      <div className="text-yellow-400">{icon}</div>
+    <Card hover padding="small">
+      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-400">
+        {icon}
+      </div>
 
-      <p className="mt-4 text-sm text-zinc-500">{title}</p>
+      <p className="mt-4 text-sm font-semibold text-zinc-500">
+        {title}
+      </p>
 
-      <p className="mt-1 text-3xl font-black">{value}</p>
-    </div>
+      <p className="mt-1 text-3xl font-black">
+        {value}
+      </p>
+    </Card>
   );
+}
+
+function CategoryBadge({
+  category,
+}: {
+  category: GuestTicket["category"];
+}) {
+  if (category === "VIP") {
+    return <Badge variant="vip">VIP</Badge>;
+  }
+
+  if (category === "Helfer") {
+    return <Badge variant="info">Helfer</Badge>;
+  }
+
+  if (category === "Blacklist") {
+    return <Badge variant="danger">Blacklist</Badge>;
+  }
+
+  return <Badge variant="neutral">Normal</Badge>;
+}
+
+function TicketTypeBadge({
+  type,
+}: {
+  type: TicketCardProps["type"];
+}) {
+  return (
+    <span
+      className="rounded-full border border-zinc-200 bg-zinc-100 px-3 py-1 text-xs font-bold"
+      style={{ color: "#52525b" }}
+    >
+      {type}
+    </span>
+  );
+}
+
+function TicketCategoryBadge({
+  category,
+}: {
+  category: GuestTicket["category"];
+}) {
+  const styles: Record<
+    GuestTicket["category"],
+    {
+      background: string;
+      color: string;
+      label: string;
+    }
+  > = {
+    Normal: {
+      background: "#f4f4f5",
+      color: "#52525b",
+      label: "Normal",
+    },
+
+    VIP: {
+      background: "#fef9c3",
+      color: "#a16207",
+      label: "VIP",
+    },
+
+    Helfer: {
+      background: "#dbeafe",
+      color: "#1d4ed8",
+      label: "Helfer",
+    },
+
+    Blacklist: {
+      background: "#fee2e2",
+      color: "#b91c1c",
+      label: "Blacklist",
+    },
+  };
+
+  const style = styles[category];
+
+  return (
+    <span
+      className="rounded-full px-3 py-1 text-xs font-bold"
+      style={{
+        backgroundColor: style.background,
+        color: style.color,
+      }}
+    >
+      {style.label}
+    </span>
+  );
+}
+
+function createShortTicketCode(ticketCode: string) {
+  return `PC-${ticketCode
+    .replace(/-/g, "")
+    .slice(0, 8)
+    .toUpperCase()}`;
 }
 
 function createSafeFilename(value: string) {
