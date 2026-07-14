@@ -5,58 +5,88 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 
 import Sidebar from "./components/Sidebar";
+import Login from "./pages/Login";
+
 import Dashboard from "./pages/Dashboard";
 import Guests from "./pages/Guests";
+import ImportGuests from "./pages/ImportGuests";
 import Tickets from "./pages/Tickets";
 import CheckIn from "./pages/CheckIn";
-import ImportGuests from "./pages/ImportGuests";
-import Settings from "./pages/Settings";
-import Login from "./pages/Login";
 import Music from "./pages/Music";
 import Photos from "./pages/Photos";
+import Settings from "./pages/Settings";
+
+import PublicHome from "./pages/PublicHome";
 import PublicMusic from "./pages/PublicMusic";
 import PublicPhotos from "./pages/PublicPhotos";
 
-function App() {
-  const searchParameters = new URLSearchParams(
-    window.location.search
-  );
+type PublicView = "home" | "music" | "photos" | null;
 
-  const publicView = searchParameters.get("view");
+function getPublicView(): PublicView {
+  const searchParameters = new URLSearchParams(window.location.search);
+  const view = searchParameters.get("view");
+
+  if (view === "home" || view === "music" || view === "photos") {
+    return view;
+  }
+
+  return null;
+}
+
+function App() {
+  /*
+   * Diese Abfrage erfolgt direkt beim Laden.
+   * Öffentliche Seiten werden dadurch nicht vom Login abhängig.
+   */
+  const publicView = getPublicView();
 
   const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(publicView === null);
+
   const [page, setPage] = useState("dashboard");
-
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] =
-    useState(false);
-
-  const [loading, setLoading] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
-    if (
-      publicView === "music" ||
-      publicView === "photos"
-    ) {
-      setLoading(false);
+    /*
+     * Für öffentliche Seiten wird Supabase Auth nicht abgefragt.
+     */
+    if (publicView !== null) {
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    let componentMounted = true;
+
+    async function loadSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!componentMounted) {
+        return;
+      }
+
+      if (error) {
+        console.error("Session konnte nicht geladen werden:", error.message);
+      }
+
       setSession(data.session);
       setLoading(false);
-    });
+    }
+
+    loadSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event, currentSession) => {
-        setSession(currentSession);
-        setLoading(false);
+    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (!componentMounted) {
+        return;
       }
-    );
+
+      setSession(currentSession);
+      setLoading(false);
+    });
 
     return () => {
+      componentMounted = false;
       subscription.unsubscribe();
     };
   }, [publicView]);
@@ -64,6 +94,14 @@ function App() {
   function changePage(newPage: string) {
     setPage(newPage);
     setSidebarOpen(false);
+  }
+
+  /*
+   * Öffentliche Bereiche:
+   * Diese Prüfungen stehen absichtlich vor Loading und Login.
+   */
+  if (publicView === "home") {
+    return <PublicHome />;
   }
 
   if (publicView === "music") {
@@ -74,6 +112,9 @@ function App() {
     return <PublicPhotos />;
   }
 
+  /*
+   * Ab hier beginnt nur noch der geschützte Admin-Bereich.
+   */
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
@@ -109,11 +150,9 @@ function App() {
         isOpen={sidebarOpen}
         closeSidebar={() => setSidebarOpen(false)}
         collapsed={sidebarCollapsed}
-        toggleCollapsed={() =>
-          setSidebarCollapsed(
-            (currentValue) => !currentValue
-          )
-        }
+        toggleCollapsed={() => {
+          setSidebarCollapsed((currentValue) => !currentValue);
+        }}
       />
 
       <main className="min-w-0 flex-1 overflow-x-hidden">
@@ -121,7 +160,7 @@ function App() {
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-white hover:bg-zinc-900"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 text-white transition hover:bg-zinc-900"
             aria-label="Menü öffnen"
           >
             <Menu size={22} />
