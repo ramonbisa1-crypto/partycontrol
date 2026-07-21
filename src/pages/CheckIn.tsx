@@ -3,17 +3,24 @@ import {
   Camera,
   CameraOff,
   Check,
-  CheckCircle2,
   Clock3,
   Search,
+  ShieldAlert,
   TicketCheck,
   User,
   X,
-  XCircle,
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
 import { supabase } from "../lib/supabase";
+
+import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import EmptyState from "../components/ui/EmptyState";
+import LoadingState from "../components/ui/LoadingState";
+import PageHeader from "../components/ui/PageHeader";
+import { useToast } from "../components/ui/ToastProvider";
 
 type PersonType = "Hauptgast" | "Begleitung";
 
@@ -42,6 +49,8 @@ type ScannerFeedback = {
 };
 
 export default function CheckIn() {
+  const { showToast } = useToast();
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanLockedRef = useRef(false);
   const feedbackTimeoutRef = useRef<number | null>(null);
@@ -54,17 +63,16 @@ export default function CheckIn() {
 
   const [scannerRunning, setScannerRunning] = useState(false);
   const [scannerLoading, setScannerLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<
-    "success" | "warning" | "error" | ""
-  >("");
-
-  const [lastPerson, setLastPerson] = useState<Person | null>(null);
   const [scannerFeedback, setScannerFeedback] =
     useState<ScannerFeedback | null>(null);
 
-  async function loadPeople() {
+  async function loadPeople(showLoading = false) {
+    if (showLoading) {
+      setLoading(true);
+    }
+
     const { data: guests, error: guestError } = await supabase
       .from("guests")
       .select(
@@ -73,8 +81,13 @@ export default function CheckIn() {
       .order("name", { ascending: true });
 
     if (guestError) {
-      setMessage(`Gäste konnten nicht geladen werden: ${guestError.message}`);
-      setMessageType("error");
+      showToast({
+        type: "error",
+        title: "Gäste konnten nicht geladen werden",
+        message: guestError.message,
+      });
+
+      setLoading(false);
       return;
     }
 
@@ -84,10 +97,13 @@ export default function CheckIn() {
       .order("name", { ascending: true });
 
     if (companionError) {
-      setMessage(
-        `Begleitungen konnten nicht geladen werden: ${companionError.message}`
-      );
-      setMessageType("error");
+      showToast({
+        type: "error",
+        title: "Begleitungen konnten nicht geladen werden",
+        message: companionError.message,
+      });
+
+      setLoading(false);
       return;
     }
 
@@ -136,6 +152,7 @@ export default function CheckIn() {
       }));
 
     setRecentCheckIns(recent);
+    setLoading(false);
   }
 
   async function findPersonByTicketCode(
@@ -208,9 +225,9 @@ export default function CheckIn() {
   function playFeedback(status: "success" | "error") {
     if ("vibrate" in navigator) {
       if (status === "success") {
-        navigator.vibrate(150);
+        navigator.vibrate(120);
       } else {
-        navigator.vibrate([180, 100, 180]);
+        navigator.vibrate([180, 80, 180]);
       }
     }
   }
@@ -219,9 +236,12 @@ export default function CheckIn() {
     const cleanCode = ticketCode.trim();
 
     if (!cleanCode) {
-      setMessage("Bitte einen Ticket-Code eingeben.");
-      setMessageType("warning");
-      setLastPerson(null);
+      showToast({
+        type: "warning",
+        title: "Ticket-Code fehlt",
+        message: "Bitte gib einen Ticket-Code ein.",
+      });
+
       return;
     }
 
@@ -235,10 +255,6 @@ export default function CheckIn() {
       const person = await findPersonByTicketCode(cleanCode);
 
       if (!person) {
-        setMessage("Ticket wurde nicht gefunden.");
-        setMessageType("error");
-        setLastPerson(null);
-
         showScannerFeedback({
           status: "error",
           title: "Ungültiges Ticket",
@@ -255,9 +271,11 @@ export default function CheckIn() {
       const errorMessage =
         error instanceof Error ? error.message : "Unbekannter Fehler";
 
-      setMessage(`Check-In fehlgeschlagen: ${errorMessage}`);
-      setMessageType("error");
-      setLastPerson(null);
+      showToast({
+        type: "error",
+        title: "Check-In fehlgeschlagen",
+        message: errorMessage,
+      });
 
       showScannerFeedback({
         status: "error",
@@ -276,10 +294,6 @@ export default function CheckIn() {
 
   async function checkInPerson(person: Person) {
     if (person.category === "Blacklist") {
-      setLastPerson(person);
-      setMessage("Diese Person ist auf der Blacklist.");
-      setMessageType("error");
-
       showScannerFeedback({
         status: "error",
         title: "Zutritt verweigern",
@@ -287,15 +301,17 @@ export default function CheckIn() {
         person,
       });
 
+      showToast({
+        type: "error",
+        title: "Blacklist",
+        message: `${person.name} darf nicht eingecheckt werden.`,
+      });
+
       playFeedback("error");
       return;
     }
 
     if (person.checked_in) {
-      setLastPerson(person);
-      setMessage("Diese Person ist bereits eingecheckt.");
-      setMessageType("warning");
-
       showScannerFeedback({
         status: "error",
         title: "Bereits eingecheckt",
@@ -321,8 +337,11 @@ export default function CheckIn() {
       .eq("id", person.id);
 
     if (error) {
-      setMessage(`Check-In fehlgeschlagen: ${error.message}`);
-      setMessageType("error");
+      showToast({
+        type: "error",
+        title: "Check-In fehlgeschlagen",
+        message: error.message,
+      });
 
       showScannerFeedback({
         status: "error",
@@ -341,12 +360,6 @@ export default function CheckIn() {
       checked_in_at: now,
     };
 
-    setLastPerson(updatedPerson);
-    setMessage("Check-In erfolgreich.");
-    setMessageType("success");
-    setManualCode("");
-    setSearch("");
-
     showScannerFeedback({
       status: "success",
       title: "Check-In erfolgreich",
@@ -355,6 +368,10 @@ export default function CheckIn() {
     });
 
     playFeedback("success");
+
+    setManualCode("");
+    setSearch("");
+
     await loadPeople();
   }
 
@@ -364,8 +381,6 @@ export default function CheckIn() {
     }
 
     setScannerLoading(true);
-    setMessage("");
-    setMessageType("");
 
     try {
       const scanner =
@@ -389,7 +404,7 @@ export default function CheckIn() {
           await handleTicket(decodedText);
         },
         () => {
-          // Normale Suchfehler der Kamera werden nicht angezeigt.
+          // normale Scanfehler werden ignoriert
         }
       );
 
@@ -400,10 +415,11 @@ export default function CheckIn() {
           ? error.message
           : "Kamera konnte nicht gestartet werden.";
 
-      setMessage(
-        `Kamera konnte nicht gestartet werden. Prüfe die Browser-Berechtigung. ${errorMessage}`
-      );
-      setMessageType("error");
+      showToast({
+        type: "error",
+        title: "Kamera konnte nicht gestartet werden",
+        message: errorMessage,
+      });
     } finally {
       setScannerLoading(false);
     }
@@ -420,7 +436,7 @@ export default function CheckIn() {
       await scanner.stop();
       await scanner.clear();
     } catch {
-      // Scanner wurde möglicherweise bereits gestoppt.
+      // bereits gestoppt
     } finally {
       scannerRef.current = null;
       setScannerRunning(false);
@@ -429,7 +445,7 @@ export default function CheckIn() {
   }
 
   useEffect(() => {
-    loadPeople();
+    loadPeople(true);
 
     return () => {
       const scanner = scannerRef.current;
@@ -452,83 +468,105 @@ export default function CheckIn() {
         .slice(0, 20)
     : [];
 
-  const messageStyles = {
-    success: "border-green-500/30 bg-green-500/10 text-green-300",
-    warning: "border-yellow-500/30 bg-yellow-500/10 text-yellow-200",
-    error: "border-red-500/30 bg-red-500/10 text-red-300",
-    "": "border-zinc-800 bg-zinc-950 text-white",
-  };
+  if (loading) {
+    return (
+      <LoadingState
+        title="Check-In wird geladen"
+        description="Gäste und Tickets werden vorbereitet."
+      />
+    );
+  }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10">
-      <div className="mb-7">
-        <p className="mb-2 font-semibold text-yellow-400">Einlass</p>
+    <div className="page-enter p-4 sm:p-6 lg:p-10">
+      <PageHeader
+        eyebrow="Einlass"
+        title="Check-In"
+        description="Scanne QR-Codes, suche Personen oder gib einen Ticket-Code manuell ein."
+        actions={
+          <Badge variant={scannerRunning ? "success" : "neutral"}>
+            <span
+              className={`mr-2 h-2 w-2 rounded-full ${
+                scannerRunning ? "bg-green-400" : "bg-zinc-500"
+              }`}
+            />
 
-        <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-          Check-In
-        </h1>
-
-        <p className="mt-2 text-zinc-400">
-          QR-Code scannen, Ticket-Code eingeben oder nach Namen suchen.
-        </p>
-      </div>
+            {scannerRunning ? "Scanner aktiv" : "Scanner inaktiv"}
+          </Badge>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
-          <section className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
+          <Card padding="none" className="overflow-hidden">
             <div className="flex flex-col gap-4 border-b border-zinc-800 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-xl font-bold sm:text-2xl">
+                <h2 className="text-xl font-black sm:text-2xl">
                   QR-Scanner
                 </h2>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  Nutzt bevorzugt die Rückkamera des Handys.
+                  Die Rückkamera des Handys wird bevorzugt verwendet.
                 </p>
               </div>
 
               {!scannerRunning ? (
-                <button
-                  type="button"
+                <Button
+                  icon={<Camera size={19} />}
+                  loading={scannerLoading}
                   onClick={startScanner}
-                  disabled={scannerLoading}
-                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black transition hover:bg-yellow-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
                 >
-                  <Camera size={20} />
-
-                  {scannerLoading ? "Kamera startet..." : "Kamera starten"}
-                </button>
+                  Kamera starten
+                </Button>
               ) : (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  icon={<CameraOff size={19} />}
                   onClick={stopScanner}
-                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-5 py-3 font-bold text-white transition hover:bg-zinc-800"
                 >
-                  <CameraOff size={20} />
                   Kamera stoppen
-                </button>
+                </Button>
               )}
             </div>
 
             <div className="p-4 sm:p-6">
-              <div className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-zinc-800 bg-black">
+              <div className="relative mx-auto max-w-xl overflow-hidden rounded-3xl border border-zinc-800 bg-black shadow-2xl">
                 <div
                   id="partycontrol-qr-reader"
-                  className="min-h-[300px] w-full"
+                  className="min-h-[320px] w-full"
                 />
+
+                {!scannerRunning && !scannerLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                    <div className="max-w-xs px-6 text-center">
+                      <Camera
+                        className="mx-auto text-zinc-600"
+                        size={38}
+                      />
+
+                      <p className="mt-4 font-black text-zinc-300">
+                        Kamera nicht aktiv
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-zinc-500">
+                        Starte die Kamera, um QR-Codes zu scannen.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {scannerFeedback && (
                   <div className="absolute inset-x-3 bottom-3 z-20 sm:inset-x-5 sm:bottom-5">
                     <div
-                      className={`rounded-2xl border p-5 shadow-2xl backdrop-blur-xl ${
+                      className={`scale-enter rounded-3xl border p-5 shadow-2xl backdrop-blur-xl ${
                         scannerFeedback.status === "success"
-                          ? "border-green-400/50 bg-green-950/95"
-                          : "border-red-400/50 bg-red-950/95"
+                          ? "success-pulse border-green-400/40 bg-green-950/95"
+                          : "error-shake border-red-400/40 bg-red-950/95"
                       }`}
                     >
                       <div className="flex items-start gap-4">
                         <div
-                          className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full ${
+                          className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl ${
                             scannerFeedback.status === "success"
                               ? "bg-green-400 text-green-950"
                               : "bg-red-400 text-red-950"
@@ -559,22 +597,30 @@ export default function CheckIn() {
                               </p>
 
                               <div className="mt-2 flex flex-wrap gap-2">
-                                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
+                                <Badge variant="neutral">
                                   {scannerFeedback.person.type}
-                                </span>
+                                </Badge>
 
-                                {scannerFeedback.person.category &&
-                                  scannerFeedback.person.category !==
-                                    "Normal" && (
-                                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white">
-                                      {scannerFeedback.person.category}
-                                    </span>
-                                  )}
+                                {scannerFeedback.person.category === "VIP" && (
+                                  <Badge variant="vip">VIP</Badge>
+                                )}
+
+                                {scannerFeedback.person.category ===
+                                  "Helfer" && (
+                                  <Badge variant="info">Helfer</Badge>
+                                )}
+
+                                {scannerFeedback.person.category ===
+                                  "Blacklist" && (
+                                  <Badge variant="danger">
+                                    Blacklist
+                                  </Badge>
+                                )}
                               </div>
                             </>
                           )}
 
-                          <p className="mt-2 text-sm text-white/70">
+                          <p className="mt-3 text-sm leading-6 text-white/70">
                             {scannerFeedback.description}
                           </p>
                         </div>
@@ -582,7 +628,7 @@ export default function CheckIn() {
                         <button
                           type="button"
                           onClick={() => setScannerFeedback(null)}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/60 transition hover:bg-white/20 hover:text-white"
                           aria-label="Meldung schliessen"
                         >
                           <X size={18} />
@@ -592,65 +638,27 @@ export default function CheckIn() {
                   </div>
                 )}
               </div>
-
-              {!scannerRunning && !scannerLoading && (
-                <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/70 p-4 text-center text-sm text-zinc-400">
-                  Tippe auf „Kamera starten“ und erlaube den Kamerazugriff.
-                </div>
-              )}
             </div>
-          </section>
+          </Card>
 
-          {message && (
-            <section
-              className={`rounded-2xl border p-5 ${messageStyles[messageType]}`}
-            >
-              <div className="flex items-start gap-3">
-                {messageType === "success" ? (
-                  <CheckCircle2 className="mt-1 shrink-0" size={24} />
-                ) : messageType === "error" ? (
-                  <XCircle className="mt-1 shrink-0" size={24} />
-                ) : (
-                  <TicketCheck className="mt-1 shrink-0" size={24} />
-                )}
+          <Card padding="large">
+            <div className="flex items-center gap-3">
+              <TicketCheck className="text-yellow-400" size={22} />
 
-                <div>
-                  <p className="text-lg font-bold">{message}</p>
+              <div>
+                <h2 className="text-xl font-black sm:text-2xl">
+                  Manueller Ticket-Code
+                </h2>
 
-                  {lastPerson && (
-                    <div className="mt-3">
-                      <p className="text-2xl font-black">
-                        {lastPerson.name}
-                      </p>
-
-                      <p className="mt-1 text-sm opacity-80">
-                        {lastPerson.type}
-                        {lastPerson.category &&
-                          lastPerson.category !== "Normal" &&
-                          ` · ${lastPerson.category}`}
-                      </p>
-
-                      {lastPerson.checked_in_at && (
-                        <p className="mt-2 text-sm opacity-80">
-                          Check-In um{" "}
-                          {formatTime(lastPerson.checked_in_at)} Uhr
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <p className="text-sm text-zinc-500">
+                  Alternative, falls der QR-Code nicht gelesen werden kann.
+                </p>
               </div>
-            </section>
-          )}
-
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6">
-            <h2 className="text-xl font-bold sm:text-2xl">
-              Manueller Ticket-Code
-            </h2>
+            </div>
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <input
-                className="min-h-12 flex-1 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 outline-none transition focus:border-yellow-400"
+                className="app-input flex-1"
                 placeholder="Ticket-Code einfügen..."
                 value={manualCode}
                 onChange={(event) => setManualCode(event.target.value)}
@@ -661,133 +669,173 @@ export default function CheckIn() {
                 }}
               />
 
-              <button
-                type="button"
-                onClick={() => handleTicket(manualCode)}
-                className="min-h-12 rounded-xl bg-yellow-400 px-6 py-3 font-bold text-black transition hover:bg-yellow-300"
-              >
+              <Button onClick={() => handleTicket(manualCode)}>
                 Einchecken
-              </button>
+              </Button>
             </div>
-          </section>
+          </Card>
 
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6">
+          <Card padding="large">
             <div className="flex items-center gap-3">
               <Search className="text-yellow-400" size={22} />
 
-              <h2 className="text-xl font-bold sm:text-2xl">
-                Namenssuche
-              </h2>
+              <div>
+                <h2 className="text-xl font-black sm:text-2xl">
+                  Namenssuche
+                </h2>
+
+                <p className="text-sm text-zinc-500">
+                  Person direkt suchen und manuell einchecken.
+                </p>
+              </div>
             </div>
 
-            <input
-              className="mt-5 min-h-12 w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 outline-none transition focus:border-yellow-400"
-              placeholder="Name suchen..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <div className="relative mt-5">
+              <Search
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+                size={18}
+              />
+
+              <input
+                className="app-input pl-11"
+                placeholder="Name suchen..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
 
             {search.trim() && (
-              <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto">
-                {filteredPeople.map((person) => (
-                  <div
-                    key={`${person.type}-${person.id}`}
-                    className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-zinc-800 text-yellow-400">
-                        <User size={20} />
-                      </div>
-
-                      <div>
-                        <p className="font-bold">{person.name}</p>
-
-                        <p className="text-sm text-zinc-500">
-                          {person.type}
-                          {person.category &&
-                            person.category !== "Normal" &&
-                            ` · ${person.category}`}
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => checkInPerson(person)}
-                      disabled={person.checked_in}
-                      className={`min-h-11 rounded-xl px-4 py-2 font-bold ${
-                        person.checked_in
-                          ? "cursor-not-allowed bg-zinc-800 text-zinc-500"
-                          : person.category === "Blacklist"
-                            ? "bg-red-500/20 text-red-300"
-                            : "bg-yellow-400 text-black hover:bg-yellow-300"
-                      }`}
+              <div className="mt-4 max-h-[440px] space-y-3 overflow-y-auto">
+                {filteredPeople.length === 0 ? (
+                  <EmptyState
+                    icon={<Search size={27} />}
+                    title="Keine Person gefunden"
+                    description="Passe den Suchbegriff an."
+                  />
+                ) : (
+                  filteredPeople.map((person) => (
+                    <div
+                      key={`${person.type}-${person.id}`}
+                      className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-black/20 p-4 transition hover:border-zinc-700 hover:bg-zinc-900 sm:flex-row sm:items-center"
                     >
-                      {person.checked_in
-                        ? "Bereits drin"
-                        : person.category === "Blacklist"
-                          ? "Gesperrt"
-                          : "Einchecken"}
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-zinc-800 text-yellow-400">
+                        {person.category === "Blacklist" ? (
+                          <ShieldAlert size={21} />
+                        ) : (
+                          <User size={21} />
+                        )}
+                      </div>
 
-                {filteredPeople.length === 0 && (
-                  <p className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-zinc-400">
-                    Keine Person gefunden.
-                  </p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-black">
+                          {person.name}
+                        </p>
+
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Badge variant="neutral">
+                            {person.type}
+                          </Badge>
+
+                          {person.category === "VIP" && (
+                            <Badge variant="vip">VIP</Badge>
+                          )}
+
+                          {person.category === "Helfer" && (
+                            <Badge variant="info">Helfer</Badge>
+                          )}
+
+                          {person.category === "Blacklist" && (
+                            <Badge variant="danger">Blacklist</Badge>
+                          )}
+
+                          {person.checked_in && (
+                            <Badge variant="success">
+                              Eingecheckt
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <Button
+                        variant={
+                          person.category === "Blacklist"
+                            ? "danger"
+                            : person.checked_in
+                              ? "secondary"
+                              : "primary"
+                        }
+                        disabled={person.checked_in}
+                        onClick={() => checkInPerson(person)}
+                      >
+                        {person.checked_in
+                          ? "Bereits drin"
+                          : person.category === "Blacklist"
+                            ? "Gesperrt"
+                            : "Einchecken"}
+                      </Button>
+                    </div>
+                  ))
                 )}
               </div>
             )}
-          </section>
+          </Card>
         </div>
 
-        <aside className="h-fit rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-6 2xl:sticky 2xl:top-6">
+        <Card
+          padding="large"
+          className="h-fit 2xl:sticky 2xl:top-6"
+        >
           <div className="flex items-center gap-3">
             <Clock3 className="text-yellow-400" size={22} />
 
             <div>
-              <h2 className="text-xl font-bold sm:text-2xl">
-                Letzte Check-Ins
+              <h2 className="text-xl font-black sm:text-2xl">
+                Letzte Check-ins
               </h2>
 
               <p className="text-sm text-zinc-500">
-                Die zehn zuletzt eingecheckten Personen.
+                Die zehn zuletzt eingelassenen Personen.
               </p>
             </div>
           </div>
 
-          <div className="mt-5 space-y-3">
-            {recentCheckIns.map((checkIn, index) => (
-              <div
-                key={`${checkIn.type}-${checkIn.id}`}
-                className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-500/10 font-bold text-green-400">
-                  {index + 1}
-                </div>
+          {recentCheckIns.length === 0 ? (
+            <div className="mt-6">
+              <EmptyState
+                icon={<Clock3 size={27} />}
+                title="Noch keine Check-ins"
+                description="Sobald die erste Person eingecheckt wird, erscheint sie hier."
+              />
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {recentCheckIns.map((checkIn, index) => (
+                <div
+                  key={`${checkIn.type}-${checkIn.id}`}
+                  className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-black/20 p-4"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-green-500/10 font-black text-green-400">
+                    {index + 1}
+                  </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-bold">{checkIn.name}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-black">
+                      {checkIn.name}
+                    </p>
 
-                  <p className="text-sm text-zinc-500">
-                    {checkIn.type}
+                    <p className="mt-1 text-sm text-zinc-500">
+                      {checkIn.type}
+                    </p>
+                  </div>
+
+                  <p className="shrink-0 font-bold tabular-nums text-zinc-300">
+                    {formatTime(checkIn.checked_in_at)}
                   </p>
                 </div>
-
-                <p className="shrink-0 text-sm font-semibold text-zinc-300">
-                  {formatTime(checkIn.checked_in_at)}
-                </p>
-              </div>
-            ))}
-
-            {recentCheckIns.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-zinc-800 p-6 text-center text-zinc-500">
-                Noch keine Check-Ins vorhanden.
-              </div>
-            )}
-          </div>
-        </aside>
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
     </div>
   );
@@ -795,6 +843,7 @@ export default function CheckIn() {
 
 function formatTime(date: string) {
   return new Date(date).toLocaleTimeString("de-CH", {
+    timeZone: "Europe/Zurich",
     hour: "2-digit",
     minute: "2-digit",
   });
