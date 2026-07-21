@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+import { EVENT_CONFIG } from "../config/event";
 
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -38,21 +39,21 @@ export default function Settings() {
       id: "home",
       title: "Öffentliche Startseite",
       description: "Zentrale Party-Seite für alle Gäste.",
-      url: `${baseUrl}/?view=home`,
+      url: `${baseUrl}/?view=${EVENT_CONFIG.publicViews.home}`,
       icon: <Home size={20} />,
     },
     {
       id: "music",
       title: "Musikwünsche",
       description: "Öffentliche Seite für Songwünsche und Likes.",
-      url: `${baseUrl}/?view=music`,
+      url: `${baseUrl}/?view=${EVENT_CONFIG.publicViews.music}`,
       icon: <Music2 size={20} />,
     },
     {
       id: "photos",
       title: "Fotowand",
       description: "Öffentlicher Foto-Upload und Live-Galerie.",
-      url: `${baseUrl}/?view=photos`,
+      url: `${baseUrl}/?view=${EVENT_CONFIG.publicViews.photos}`,
       icon: <Camera size={20} />,
     },
   ];
@@ -198,15 +199,20 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <InfoCard
             title="Datum"
-            value="16. Oktober 2026"
+            value={EVENT_CONFIG.dateLabel}
           />
 
           <InfoCard
             title="Startzeit"
-            value="Aktuell 19:00 Uhr"
+            value={`${EVENT_CONFIG.startTime} Uhr`}
+          />
+
+          <InfoCard
+            title="Location"
+            value={EVENT_CONFIG.location}
           />
 
           <InfoCard
@@ -254,7 +260,7 @@ function InfoCard({
         {title}
       </p>
 
-      <p className="mt-2 font-black text-zinc-200">
+      <p className="mt-2 font-black leading-6 text-zinc-200">
         {value}
       </p>
     </div>

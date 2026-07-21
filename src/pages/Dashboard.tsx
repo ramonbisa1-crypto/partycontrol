@@ -14,6 +14,10 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+import {
+  EVENT_CONFIG,
+  EVENT_START,
+} from "../config/event";
 
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -55,15 +59,6 @@ type Countdown = {
   started: boolean;
   finished: boolean;
 };
-
-/*
- * Party-Datum:
- * 16. Oktober 2026, aktuell vorläufig um 19:00 Uhr.
- *
- * Sobald die genaue Uhrzeit klar ist, musst du nur
- * die Uhrzeit in dieser Zeile anpassen.
- */
-const partyDate = new Date("2026-10-16T19:00:00+02:00");
 
 export default function Dashboard() {
   const { showToast } = useToast();
@@ -258,7 +253,7 @@ export default function Dashboard() {
   }, [guests, companions]);
 
   const countdown = useMemo(() => {
-    return calculateCountdown(currentTime, partyDate);
+    return calculateCountdown(currentTime, EVENT_START);
   }, [currentTime]);
 
   if (loading) {
@@ -275,7 +270,7 @@ export default function Dashboard() {
       <PageHeader
         eyebrow="Live Event Control"
         title="Dashboard"
-        description="Alle wichtigen Kennzahlen und Check-ins für die Geburtstagsparty am 16. Oktober 2026."
+        description={`Alle wichtigen Kennzahlen und Check-ins für ${EVENT_CONFIG.name} am ${EVENT_CONFIG.dateLabel}.`}
         actions={
           <>
             <div className="flex min-h-12 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
@@ -311,8 +306,6 @@ export default function Dashboard() {
         >
           <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-yellow-400/10 blur-3xl" />
 
-          <div className="pointer-events-none absolute -bottom-36 -left-24 h-80 w-80 rounded-full bg-yellow-400/5 blur-3xl" />
-
           <div className="relative">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -323,17 +316,16 @@ export default function Dashboard() {
                   />
 
                   <p className="font-bold text-yellow-400">
-                    Freitag, 16. Oktober 2026
+                    {EVENT_CONFIG.fullDateLabel}
                   </p>
                 </div>
 
                 <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-                  Birthday Party
+                  {EVENT_CONFIG.name}
                 </h2>
 
                 <p className="mt-3 max-w-xl leading-7 text-zinc-400">
-                  Der zentrale Überblick für Einlass,
-                  Gästemanagement und Live-Statistiken.
+                  {EVENT_CONFIG.location}
                 </p>
               </div>
 
@@ -342,25 +334,10 @@ export default function Dashboard() {
 
             {!countdown.finished && !countdown.started && (
               <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <CountdownUnit
-                  value={countdown.days}
-                  label="Tage"
-                />
-
-                <CountdownUnit
-                  value={countdown.hours}
-                  label="Stunden"
-                />
-
-                <CountdownUnit
-                  value={countdown.minutes}
-                  label="Minuten"
-                />
-
-                <CountdownUnit
-                  value={countdown.seconds}
-                  label="Sekunden"
-                />
+                <CountdownUnit value={countdown.days} label="Tage" />
+                <CountdownUnit value={countdown.hours} label="Stunden" />
+                <CountdownUnit value={countdown.minutes} label="Minuten" />
+                <CountdownUnit value={countdown.seconds} label="Sekunden" />
               </div>
             )}
           </div>
@@ -521,27 +498,17 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-6 space-y-4">
-              <StatusRow
-                label="Datenbank"
-                value="Online"
-                status="success"
-              />
-
-              <StatusRow
-                label="QR-Check-in"
-                value="Bereit"
-                status="success"
-              />
-
-              <StatusRow
-                label="Realtime"
-                value="Verbunden"
-                status="success"
-              />
-
+              <StatusRow label="Datenbank" value="Online" status="success" />
+              <StatusRow label="QR-Check-in" value="Bereit" status="success" />
+              <StatusRow label="Realtime" value="Verbunden" status="success" />
               <StatusRow
                 label="Party-Datum"
-                value="16.10.2026"
+                value={EVENT_CONFIG.dateLabel}
+                status="neutral"
+              />
+              <StatusRow
+                label="Location"
+                value={EVENT_CONFIG.locationName}
                 status="neutral"
               />
             </div>
@@ -605,11 +572,7 @@ function EventStatus({
   countdown: Countdown;
 }) {
   if (countdown.finished) {
-    return (
-      <Badge variant="neutral">
-        Event beendet
-      </Badge>
-    );
+    return <Badge variant="neutral">Event beendet</Badge>;
   }
 
   if (countdown.started) {
@@ -766,7 +729,7 @@ function StatusRow({
           }`}
         />
 
-        <p className="text-sm font-bold text-zinc-300">
+        <p className="text-right text-sm font-bold text-zinc-300">
           {value}
         </p>
       </div>
@@ -805,25 +768,11 @@ function calculateCountdown(
     };
   }
 
-  const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-
-  const hours = Math.floor(
-    (difference / (1000 * 60 * 60)) % 24
-  );
-
-  const minutes = Math.floor(
-    (difference / (1000 * 60)) % 60
-  );
-
-  const seconds = Math.floor(
-    (difference / 1000) % 60
-  );
-
   return {
-    days,
-    hours,
-    minutes,
-    seconds,
+    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+    minutes: Math.floor((difference / (1000 * 60)) % 60),
+    seconds: Math.floor((difference / 1000) % 60),
     started: false,
     finished: false,
   };
@@ -831,7 +780,7 @@ function calculateCountdown(
 
 function formatClock(date: Date) {
   return date.toLocaleTimeString("de-CH", {
-    timeZone: "Europe/Zurich",
+    timeZone: EVENT_CONFIG.timezone,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

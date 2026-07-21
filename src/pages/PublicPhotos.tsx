@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+import { EVENT_CONFIG } from "../config/event";
 
 type PartyPhoto = {
   id: string;
@@ -22,8 +23,7 @@ type PartyPhoto = {
   created_at: string;
 };
 
-const maximumFileSize =
-  10 * 1024 * 1024;
+const maximumFileSize = 10 * 1024 * 1024;
 
 const allowedMimeTypes = [
   "image/jpeg",
@@ -69,10 +69,7 @@ export default function PublicPhotos() {
       .from("party_photos")
       .select("*")
       .eq("approved", true)
-      .order(
-        "created_at",
-        { ascending: false }
-      );
+      .order("created_at", { ascending: false });
 
     if (error) {
       setErrorMessage(error.message);
@@ -88,9 +85,7 @@ export default function PublicPhotos() {
     loadPhotos();
 
     const channel = supabase
-      .channel(
-        "professional-public-photos"
-      )
+      .channel("professional-public-photos")
       .on(
         "postgres_changes",
         {
@@ -112,9 +107,7 @@ export default function PublicPhotos() {
   useEffect(() => {
     return () => {
       if (previewUrl) {
-        URL.revokeObjectURL(
-          previewUrl
-        );
+        URL.revokeObjectURL(previewUrl);
       }
     };
   }, [previewUrl]);
@@ -130,11 +123,7 @@ export default function PublicPhotos() {
       return;
     }
 
-    if (
-      !allowedMimeTypes.includes(
-        file.type
-      )
-    ) {
+    if (!allowedMimeTypes.includes(file.type)) {
       setErrorMessage(
         "Erlaubt sind JPG, PNG, WebP, HEIC und HEIF."
       );
@@ -143,10 +132,7 @@ export default function PublicPhotos() {
       return;
     }
 
-    if (
-      file.size >
-      maximumFileSize
-    ) {
+    if (file.size > maximumFileSize) {
       setErrorMessage(
         "Das Foto darf maximal 10 MB gross sein."
       );
@@ -156,30 +142,23 @@ export default function PublicPhotos() {
     }
 
     if (previewUrl) {
-      URL.revokeObjectURL(
-        previewUrl
-      );
+      URL.revokeObjectURL(previewUrl);
     }
 
     setSelectedFile(file);
-    setPreviewUrl(
-      URL.createObjectURL(file)
-    );
+    setPreviewUrl(URL.createObjectURL(file));
   }
 
   function clearSelectedFile() {
     if (previewUrl) {
-      URL.revokeObjectURL(
-        previewUrl
-      );
+      URL.revokeObjectURL(previewUrl);
     }
 
     setSelectedFile(null);
     setPreviewUrl("");
 
     if (fileInputRef.current) {
-      fileInputRef.current.value =
-        "";
+      fileInputRef.current.value = "";
     }
   }
 
@@ -188,25 +167,16 @@ export default function PublicPhotos() {
   ) {
     event.preventDefault();
 
-    const cleanGuestName =
-      guestName.trim();
-
-    const cleanCaption =
-      caption.trim();
+    const cleanGuestName = guestName.trim();
+    const cleanCaption = caption.trim();
 
     if (!cleanGuestName) {
-      setErrorMessage(
-        "Bitte gib deinen Namen ein."
-      );
-
+      setErrorMessage("Bitte gib deinen Namen ein.");
       return;
     }
 
     if (!selectedFile) {
-      setErrorMessage(
-        "Bitte wähle ein Foto aus."
-      );
-
+      setErrorMessage("Bitte wähle ein Foto aus.");
       return;
     }
 
@@ -218,17 +188,13 @@ export default function PublicPhotos() {
       selectedFile.name
         .split(".")
         .pop()
-        ?.toLowerCase() ||
-      "jpg";
+        ?.toLowerCase() || "jpg";
 
-    const currentDate =
-      new Date();
+    const currentDate = new Date();
 
     const storagePath = [
       currentDate.getFullYear(),
-      String(
-        currentDate.getMonth() + 1
-      ).padStart(2, "0"),
+      String(currentDate.getMonth() + 1).padStart(2, "0"),
       `${crypto.randomUUID()}.${extension}`,
     ].join("/");
 
@@ -241,8 +207,7 @@ export default function PublicPhotos() {
           {
             cacheControl: "3600",
             upsert: false,
-            contentType:
-              selectedFile.type,
+            contentType: selectedFile.type,
           }
         );
 
@@ -265,14 +230,10 @@ export default function PublicPhotos() {
       await supabase
         .from("party_photos")
         .insert({
-          guest_name:
-            cleanGuestName,
-          caption:
-            cleanCaption || null,
-          storage_path:
-            storagePath,
-          public_url:
-            publicUrl,
+          guest_name: cleanGuestName,
+          caption: cleanCaption || null,
+          storage_path: storagePath,
+          public_url: publicUrl,
         });
 
     if (databaseError) {
@@ -308,12 +269,11 @@ export default function PublicPhotos() {
 
           <div>
             <h1 className="text-xl font-black tracking-tight sm:text-2xl">
-              Birthday Party
+              {EVENT_CONFIG.name}
             </h1>
 
             <p className="text-sm text-zinc-500">
-              16. Oktober 2026 ·
-              Live-Fotowand
+              {EVENT_CONFIG.dateLabel} · Live-Fotowand
             </p>
           </div>
         </div>
@@ -334,10 +294,12 @@ export default function PublicPhotos() {
             </h2>
 
             <p className="mt-4 max-w-2xl leading-7 text-zinc-400">
-              Lade dein Lieblingsfoto hoch.
-              Nach der Freigabe erscheint
-              es direkt in der öffentlichen
-              Galerie.
+              Lade dein Lieblingsfoto hoch. Nach der Freigabe erscheint
+              es direkt in der öffentlichen Galerie.
+            </p>
+
+            <p className="mt-3 text-sm text-zinc-600">
+              {EVENT_CONFIG.location}
             </p>
           </div>
         </section>
@@ -374,9 +336,7 @@ export default function PublicPhotos() {
                   placeholder="z.B. Ramon"
                   value={guestName}
                   onChange={(event) =>
-                    setGuestName(
-                      event.target.value
-                    )
+                    setGuestName(event.target.value)
                   }
                   maxLength={80}
                 />
@@ -392,9 +352,7 @@ export default function PublicPhotos() {
                   placeholder="Optional"
                   value={caption}
                   onChange={(event) =>
-                    setCaption(
-                      event.target.value
-                    )
+                    setCaption(event.target.value)
                   }
                   maxLength={250}
                 />
@@ -407,9 +365,7 @@ export default function PublicPhotos() {
                 capture="environment"
                 className="hidden"
                 onChange={(event) =>
-                  handleFileSelection(
-                    event.target.files?.[0]
-                  )
+                  handleFileSelection(event.target.files?.[0])
                 }
               />
 
@@ -424,12 +380,7 @@ export default function PublicPhotos() {
                   <Camera size={30} />
 
                   <span className="font-black">
-                    Foto aufnehmen oder
-                    auswählen
-                  </span>
-
-                  <span className="text-xs text-zinc-600">
-                    JPG, PNG, WebP oder HEIC
+                    Foto aufnehmen oder auswählen
                   </span>
                 </button>
               ) : (
@@ -443,29 +394,12 @@ export default function PublicPhotos() {
 
                     <button
                       type="button"
-                      onClick={
-                        clearSelectedFile
-                      }
+                      onClick={clearSelectedFile}
                       className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/75 text-white backdrop-blur transition hover:bg-black"
                       aria-label="Foto entfernen"
                     >
                       <X size={19} />
                     </button>
-                  </div>
-
-                  <div className="border-t border-zinc-800 bg-zinc-950 p-4">
-                    <p className="truncate font-semibold">
-                      {selectedFile.name}
-                    </p>
-
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {(
-                        selectedFile.size /
-                        1024 /
-                        1024
-                      ).toFixed(2)}{" "}
-                      MB
-                    </p>
                   </div>
                 </div>
               )}
@@ -515,8 +449,7 @@ export default function PublicPhotos() {
                 </h3>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  {photos.length} freigegebene
-                  Fotos
+                  {photos.length} freigegebene Fotos
                 </p>
               </div>
 
@@ -525,10 +458,7 @@ export default function PublicPhotos() {
                 onClick={loadPhotos}
                 className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-2 font-bold transition hover:bg-zinc-900"
               >
-                <RefreshCcw
-                  size={17}
-                />
-
+                <RefreshCcw size={17} />
                 Aktualisieren
               </button>
             </div>
@@ -545,13 +475,7 @@ export default function PublicPhotos() {
                 />
 
                 <p className="mt-4 font-black text-zinc-300">
-                  Noch keine Fotos
-                  freigegeben
-                </p>
-
-                <p className="mt-2 text-sm leading-6 text-zinc-500">
-                  Sei die erste Person, die
-                  einen Moment hochlädt.
+                  Noch keine Fotos freigegeben
                 </p>
               </div>
             ) : (
@@ -561,19 +485,15 @@ export default function PublicPhotos() {
                     key={photo.id}
                     className="group mb-4 break-inside-avoid overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950 transition hover:-translate-y-1 hover:border-zinc-700"
                   >
-                    <div className="overflow-hidden">
-                      <img
-                        src={
-                          photo.public_url
-                        }
-                        alt={
-                          photo.caption ||
-                          `Foto von ${photo.guest_name}`
-                        }
-                        loading="lazy"
-                        className="h-auto w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-                      />
-                    </div>
+                    <img
+                      src={photo.public_url}
+                      alt={
+                        photo.caption ||
+                        `Foto von ${photo.guest_name}`
+                      }
+                      loading="lazy"
+                      className="h-auto w-full object-cover"
+                    />
 
                     <div className="p-4">
                       {photo.caption && (

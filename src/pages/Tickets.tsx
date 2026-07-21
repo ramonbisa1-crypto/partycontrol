@@ -21,6 +21,7 @@ import EmptyState from "../components/ui/EmptyState";
 import LoadingState from "../components/ui/LoadingState";
 import PageHeader from "../components/ui/PageHeader";
 import { useToast } from "../components/ui/ToastProvider";
+import { EVENT_CONFIG } from "../config/event";
 
 type GuestTicket = {
   id: string;
@@ -495,13 +496,17 @@ function TicketCard({
           <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-yellow-400/10 blur-2xl" />
 
           <div className="relative">
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-yellow-400">
-              Birthday Party
-            </p>
+           <p className="text-xs font-black uppercase tracking-[0.28em] text-yellow-400">
+          {EVENT_CONFIG.name}
+          </p>
 
-            <p className="mt-2 text-sm text-zinc-400">
-              16. Oktober 2026
-            </p>
+          <p className="mt-2 text-sm text-zinc-400">
+          {EVENT_CONFIG.dateLabel}
+          </p>
+
+          <p className="mt-1 text-xs text-zinc-500">
+          {EVENT_CONFIG.locationName}
+          </p>
           </div>
         </div>
 

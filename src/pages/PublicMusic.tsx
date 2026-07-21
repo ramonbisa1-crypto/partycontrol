@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+import { EVENT_CONFIG } from "../config/event";
 
 type MusicRequest = {
   id: string;
@@ -26,9 +27,7 @@ type MusicRequest = {
 };
 
 export default function PublicMusic() {
-  const [requests, setRequests] = useState<
-    MusicRequest[]
-  >([]);
+  const [requests, setRequests] = useState<MusicRequest[]>([]);
 
   const [guestName, setGuestName] = useState("");
   const [songTitle, setSongTitle] = useState("");
@@ -36,13 +35,10 @@ export default function PublicMusic() {
   const [note, setNote] = useState("");
 
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] =
-    useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [successMessage, setSuccessMessage] =
-    useState("");
-  const [errorMessage, setErrorMessage] =
-    useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   async function loadRequests() {
     const { data, error } = await supabase
@@ -198,11 +194,11 @@ export default function PublicMusic() {
 
           <div>
             <h1 className="text-xl font-black tracking-tight sm:text-2xl">
-              Birthday Party
+              {EVENT_CONFIG.name}
             </h1>
 
             <p className="text-sm text-zinc-500">
-              16. Oktober 2026 · Musikwünsche
+              {EVENT_CONFIG.dateLabel} · Musikwünsche
             </p>
           </div>
         </div>
@@ -223,9 +219,12 @@ export default function PublicMusic() {
             </h2>
 
             <p className="mt-4 max-w-2xl leading-7 text-zinc-400">
-              Reiche deinen Musikwunsch ein oder
-              unterstütze bereits eingereichte Songs
-              mit einem Like.
+              Reiche deinen Musikwunsch ein oder unterstütze bereits
+              eingereichte Songs mit einem Like.
+            </p>
+
+            <p className="mt-3 text-sm text-zinc-600">
+              {EVENT_CONFIG.locationName} · {EVENT_CONFIG.city}
             </p>
           </div>
         </section>
@@ -378,55 +377,52 @@ export default function PublicMusic() {
               )}
 
               {!loading &&
-                sortedRequests.map(
-                  (request, index) => (
-                    <article
-                      key={request.id}
-                      className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-black/20 p-4 transition hover:border-zinc-700 hover:bg-zinc-900"
+                sortedRequests.map((request, index) => (
+                  <article
+                    key={request.id}
+                    className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-black/20 p-4 transition hover:border-zinc-700 hover:bg-zinc-900"
+                  >
+                    <div
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-black ${
+                        index === 0
+                          ? "bg-yellow-400 text-black shadow-lg shadow-yellow-400/15"
+                          : index === 1
+                            ? "bg-zinc-300 text-zinc-900"
+                            : index === 2
+                              ? "bg-amber-700/30 text-amber-300"
+                              : "bg-zinc-800 text-zinc-400"
+                      }`}
                     >
-                      <div
-                        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-black ${
-                          index === 0
-                            ? "bg-yellow-400 text-black shadow-lg shadow-yellow-400/15"
-                            : index === 1
-                              ? "bg-zinc-300 text-zinc-900"
-                              : index === 2
-                                ? "bg-amber-700/30 text-amber-300"
-                                : "bg-zinc-800 text-zinc-400"
-                        }`}
-                      >
-                        {index + 1}
-                      </div>
+                      {index + 1}
+                    </div>
 
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-black">
-                          {request.song_title}
-                        </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-black">
+                        {request.song_title}
+                      </p>
 
-                        <p className="truncate text-sm text-zinc-500">
-                          {request.artist ||
-                            "Interpret nicht angegeben"}
-                        </p>
+                      <p className="truncate text-sm text-zinc-500">
+                        {request.artist ||
+                          "Interpret nicht angegeben"}
+                      </p>
 
-                        <p className="mt-1 truncate text-xs text-zinc-600">
-                          Gewünscht von{" "}
-                          {request.guest_name}
-                        </p>
-                      </div>
+                      <p className="mt-1 truncate text-xs text-zinc-600">
+                        Gewünscht von {request.guest_name}
+                      </p>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          likeRequest(request)
-                        }
-                        className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-black text-zinc-300 transition hover:border-yellow-400 hover:text-yellow-400"
-                      >
-                        <Heart size={18} />
-                        {request.likes}
-                      </button>
-                    </article>
-                  )
-                )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        likeRequest(request)
+                      }
+                      className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-black text-zinc-300 transition hover:border-yellow-400 hover:text-yellow-400"
+                    >
+                      <Heart size={18} />
+                      {request.likes}
+                    </button>
+                  </article>
+                ))}
 
               {!loading &&
                 sortedRequests.length === 0 && (
@@ -441,8 +437,7 @@ export default function PublicMusic() {
                     </p>
 
                     <p className="mt-2 text-sm text-zinc-500">
-                      Sei die erste Person, die einen Song
-                      einreicht.
+                      Sei die erste Person, die einen Song einreicht.
                     </p>
                   </div>
                 )}

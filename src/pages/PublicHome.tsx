@@ -11,7 +11,10 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const partyDate = new Date("2026-10-16T19:00:00+02:00");
+import {
+  EVENT_CONFIG,
+  EVENT_START,
+} from "../config/event";
 
 export default function PublicHome() {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -29,7 +32,8 @@ export default function PublicHome() {
   }, []);
 
   const countdown = useMemo(() => {
-    const difference = partyDate.getTime() - currentTime.getTime();
+    const difference =
+      EVENT_START.getTime() - currentTime.getTime();
 
     if (difference <= 0) {
       return {
@@ -42,10 +46,18 @@ export default function PublicHome() {
     }
 
     return {
-      days: Math.floor(difference / (1000 * 60 * 60 * 24)),
-      hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
-      minutes: Math.floor((difference / (1000 * 60)) % 60),
-      seconds: Math.floor((difference / 1000) % 60),
+      days: Math.floor(
+        difference / (1000 * 60 * 60 * 24)
+      ),
+      hours: Math.floor(
+        (difference / (1000 * 60 * 60)) % 24
+      ),
+      minutes: Math.floor(
+        (difference / (1000 * 60)) % 60
+      ),
+      seconds: Math.floor(
+        (difference / 1000) % 60
+      ),
       started: false,
     };
   }, [currentTime]);
@@ -61,11 +73,11 @@ export default function PublicHome() {
 
             <div>
               <p className="text-xl font-black tracking-tight sm:text-2xl">
-                Birthday Party
+                {EVENT_CONFIG.name}
               </p>
 
               <p className="text-sm text-zinc-500">
-                16. Oktober 2026
+                {EVENT_CONFIG.dateLabel}
               </p>
             </div>
           </div>
@@ -87,7 +99,7 @@ export default function PublicHome() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-sm font-bold text-yellow-400">
                 <Sparkles size={16} />
-                16. Oktober 2026
+                {EVENT_CONFIG.dateLabel}
               </div>
 
               <h1 className="mt-6 text-4xl font-black leading-tight tracking-tight sm:text-6xl lg:text-7xl">
@@ -206,19 +218,19 @@ export default function PublicHome() {
             <InfoCard
               icon={<CalendarDays size={21} />}
               title="Datum"
-              value="Freitag, 16. Oktober 2026"
+              value={EVENT_CONFIG.fullDateLabel}
             />
 
             <InfoCard
               icon={<Clock3 size={21} />}
               title="Startzeit"
-              value="19:00 Uhr"
+              value={`${EVENT_CONFIG.startTime} Uhr`}
             />
 
             <InfoCard
               icon={<MapPin size={21} />}
               title="Location"
-              value="Adresse folgt"
+              value={EVENT_CONFIG.location}
             />
 
             <InfoCard
@@ -255,7 +267,7 @@ export default function PublicHome() {
           </p>
 
           <p className="mt-1 text-sm text-zinc-600">
-            Birthday Party · 16. Oktober 2026
+            {EVENT_CONFIG.name} · {EVENT_CONFIG.dateLabel}
           </p>
         </footer>
       </main>
@@ -327,7 +339,7 @@ function InfoCard({
         {title}
       </p>
 
-      <p className="mt-2 font-black text-zinc-200">
+      <p className="mt-2 font-black leading-6 text-zinc-200">
         {value}
       </p>
     </div>
