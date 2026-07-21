@@ -6,11 +6,21 @@ import {
   Heart,
   Music2,
   RefreshCcw,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+
+import Badge from "../components/ui/Badge";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
+import EmptyState from "../components/ui/EmptyState";
+import LoadingState from "../components/ui/LoadingState";
+import PageHeader from "../components/ui/PageHeader";
+import { useToast } from "../components/ui/ToastProvider";
 
 type MusicStatus = "Neu" | "Geplant" | "Gespielt" | "Abgelehnt";
 
@@ -26,15 +36,26 @@ type MusicRequest = {
 };
 
 export default function Music() {
+  const { showToast } = useToast();
+
   const [requests, setRequests] = useState<MusicRequest[]>([]);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"Alle" | MusicStatus>("Alle");
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<"Alle" | MusicStatus>("Alle");
+
+  const [requestToDelete, setRequestToDelete] =
+    useState<MusicRequest | null>(null);
+
+  const [deleting, setDeleting] = useState(false);
 
   async function loadRequests(showLoading = false) {
     if (showLoading) {
       setLoading(true);
+    } else {
+      setRefreshing(true);
     }
 
     const { data, error } = await supabase
@@ -44,21 +65,27 @@ export default function Music() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setErrorMessage(error.message);
+      showToast({
+        type: "error",
+        title: "Musikwünsche konnten nicht geladen werden",
+        message: error.message,
+      });
+
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
-    setRequests(data ?? []);
-    setErrorMessage("");
+    setRequests((data ?? []) as MusicRequest[]);
     setLoading(false);
+    setRefreshing(false);
   }
 
   useEffect(() => {
     loadRequests(true);
 
     const channel = supabase
-      .channel("admin-music-requests")
+      .channel("professional-admin-music")
       .on(
         "postgres_changes",
         {
@@ -77,51 +104,82 @@ export default function Music() {
     };
   }, []);
 
-  async function updateStatus(id: string, status: MusicStatus) {
+  async function updateStatus(
+    request: MusicRequest,
+    status: MusicStatus
+  ) {
     const { error } = await supabase
       .from("music_requests")
       .update({
         status,
       })
-      .eq("id", id);
+      .eq("id", request.id);
 
     if (error) {
-      setErrorMessage(error.message);
+      showToast({
+        type: "error",
+        title: "Status konnte nicht geändert werden",
+        message: error.message,
+      });
+
       return;
     }
 
     setRequests((currentRequests) =>
-      currentRequests.map((request) =>
-        request.id === id
+      currentRequests.map((item) =>
+        item.id === request.id
           ? {
-              ...request,
+              ...item,
               status,
             }
-          : request
+          : item
       )
     );
+
+    showToast({
+      type: "success",
+      title: "Status aktualisiert",
+      message: `${request.song_title} ist jetzt "${status}".`,
+    });
   }
 
-  async function deleteRequest(id: string) {
-    const confirmed = confirm("Diesen Musikwunsch wirklich löschen?");
-
-    if (!confirmed) {
+  async function deleteRequest() {
+    if (!requestToDelete) {
       return;
     }
+
+    setDeleting(true);
 
     const { error } = await supabase
       .from("music_requests")
       .delete()
-      .eq("id", id);
+      .eq("id", requestToDelete.id);
 
     if (error) {
-      setErrorMessage(error.message);
+      showToast({
+        type: "error",
+        title: "Musikwunsch konnte nicht gelöscht werden",
+        message: error.message,
+      });
+
+      setDeleting(false);
       return;
     }
 
+    showToast({
+      type: "success",
+      title: "Musikwunsch gelöscht",
+      message: `${requestToDelete.song_title} wurde entfernt.`,
+    });
+
     setRequests((currentRequests) =>
-      currentRequests.filter((request) => request.id !== id)
+      currentRequests.filter(
+        (request) => request.id !== requestToDelete.id
+      )
     );
+
+    setRequestToDelete(null);
+    setDeleting(false);
   }
 
   const filteredRequests = useMemo(() => {
@@ -130,119 +188,154 @@ export default function Music() {
     return requests.filter((request) => {
       const matchesSearch =
         !cleanSearch ||
-        request.song_title.toLowerCase().includes(cleanSearch) ||
-        request.artist?.toLowerCase().includes(cleanSearch) ||
-        request.guest_name.toLowerCase().includes(cleanSearch);
+        request.song_title
+          .toLowerCase()
+          .includes(cleanSearch) ||
+        request.artist
+          ?.toLowerCase()
+          .includes(cleanSearch) ||
+        request.guest_name
+          .toLowerCase()
+          .includes(cleanSearch);
 
       const matchesStatus =
-        statusFilter === "Alle" || request.status === statusFilter;
+        statusFilter === "Alle" ||
+        request.status === statusFilter;
 
       return matchesSearch && matchesStatus;
     });
   }, [requests, search, statusFilter]);
 
+  const statistics = useMemo(() => {
+    return {
+      total: requests.length,
+      new: requests.filter(
+        (request) => request.status === "Neu"
+      ).length,
+      planned: requests.filter(
+        (request) => request.status === "Geplant"
+      ).length,
+      played: requests.filter(
+        (request) => request.status === "Gespielt"
+      ).length,
+    };
+  }, [requests]);
+
   const publicLink = `${window.location.origin}/?view=music`;
 
+  if (loading) {
+    return (
+      <LoadingState
+        title="Musikwünsche werden geladen"
+        description="Die aktuelle Wunschliste wird vorbereitet."
+      />
+    );
+  }
+
   return (
-    <div className="p-4 sm:p-6 lg:p-10">
-      <div className="mb-8 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="mb-2 font-semibold text-yellow-400">
-            Party-Musik
-          </p>
+    <div className="page-enter p-4 sm:p-6 lg:p-10">
+      <PageHeader
+        eyebrow="Party-Musik"
+        title="Musikwünsche"
+        description="Verwalte die Wünsche der Gäste und bereite die Playlist für den DJ vor."
+        actions={
+          <>
+            <a
+              href={publicLink}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Button
+                icon={<ExternalLink size={18} />}
+              >
+                Gastseite öffnen
+              </Button>
+            </a>
 
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-            Musikwünsche
-          </h1>
+            <Button
+              variant="secondary"
+              icon={<RefreshCcw size={18} />}
+              loading={refreshing}
+              onClick={() => loadRequests()}
+            >
+              Aktualisieren
+            </Button>
+          </>
+        }
+      />
 
-          <p className="mt-2 text-zinc-400">
-            Wünsche verwalten und für den DJ vorbereiten.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <a
-            href={publicLink}
-            target="_blank"
-            rel="noreferrer"
-            className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-yellow-400 px-5 py-3 font-bold text-black transition hover:bg-yellow-300"
-          >
-            <ExternalLink size={18} />
-            Gastseite öffnen
-          </a>
-
-          <button
-            type="button"
-            onClick={() => loadRequests(true)}
-            className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-5 py-3 font-bold transition hover:bg-zinc-900"
-          >
-            <RefreshCcw size={18} />
-            Aktualisieren
-          </button>
-        </div>
-      </div>
-
-      {errorMessage && (
-        <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-          {errorMessage}
-        </div>
-      )}
-
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatusCard
-          title="Neu"
-          value={requests.filter((request) => request.status === "Neu").length}
-        />
-
-        <StatusCard
-          title="Geplant"
-          value={
-            requests.filter((request) => request.status === "Geplant").length
-          }
-        />
-
-        <StatusCard
-          title="Gespielt"
-          value={
-            requests.filter((request) => request.status === "Gespielt").length
-          }
-        />
-
-        <StatusCard
+      <section className="mb-7 grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <SummaryCard
           title="Total"
-          value={requests.length}
+          value={statistics.total}
+          variant="neutral"
         />
-      </div>
 
-      <section className="rounded-3xl border border-zinc-800 bg-zinc-950">
-        <div className="flex flex-col gap-4 border-b border-zinc-800 p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <Music2 className="text-yellow-400" size={22} />
+        <SummaryCard
+          title="Neu"
+          value={statistics.new}
+          variant="info"
+        />
 
-            <div>
-              <h2 className="text-xl font-bold">
+        <SummaryCard
+          title="Geplant"
+          value={statistics.planned}
+          variant="warning"
+        />
+
+        <SummaryCard
+          title="Gespielt"
+          value={statistics.played}
+          variant="success"
+        />
+      </section>
+
+      <Card padding="none" className="overflow-hidden">
+        <div className="flex flex-col gap-5 border-b border-zinc-800 p-5 sm:p-6 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <Music2
+                className="text-yellow-400"
+                size={22}
+              />
+
+              <h2 className="text-xl font-black sm:text-2xl">
                 Wunschliste
               </h2>
-
-              <p className="text-sm text-zinc-500">
-                {filteredRequests.length} Einträge angezeigt
-              </p>
             </div>
+
+            <p className="mt-2 text-sm text-zinc-500">
+              {filteredRequests.length} von {requests.length} Wünschen
+              angezeigt
+            </p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              className="min-h-11 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 outline-none focus:border-yellow-400 sm:w-72"
-              placeholder="Song, Interpret oder Gast..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+                size={18}
+              />
+
+              <input
+                className="app-input pl-11 sm:w-80"
+                placeholder="Song, Interpret oder Gast..."
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+              />
+            </div>
 
             <select
-              className="min-h-11 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 outline-none focus:border-yellow-400"
+              className="app-input"
               value={statusFilter}
               onChange={(event) =>
-                setStatusFilter(event.target.value as "Alle" | MusicStatus)
+                setStatusFilter(
+                  event.target.value as
+                    | "Alle"
+                    | MusicStatus
+                )
               }
             >
               <option value="Alle">Alle Status</option>
@@ -254,110 +347,195 @@ export default function Music() {
           </div>
         </div>
 
-        <div className="space-y-3 p-4 sm:p-5">
-          {loading && (
-            <div className="py-12 text-center text-zinc-500">
-              Musikwünsche werden geladen...
-            </div>
-          )}
-
-          {!loading &&
-            filteredRequests.map((request) => (
+        {filteredRequests.length === 0 ? (
+          <div className="p-5 sm:p-7">
+            <EmptyState
+              icon={<Music2 size={29} />}
+              title="Keine Musikwünsche gefunden"
+              description="Passe die Suche oder den Filter an."
+            />
+          </div>
+        ) : (
+          <div className="space-y-4 p-4 sm:p-5">
+            {filteredRequests.map((request, index) => (
               <article
                 key={request.id}
-                className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5"
+                className="rounded-3xl border border-zinc-800 bg-black/20 p-4 transition hover:border-zinc-700 hover:bg-zinc-900 sm:p-5"
               >
                 <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="text-lg font-black">
-                        {request.song_title}
-                      </h3>
-
-                      <StatusBadge status={request.status} />
-
-                      <span className="flex items-center gap-1 rounded-full bg-zinc-800 px-3 py-1 text-sm text-zinc-300">
-                        <Heart size={14} />
-                        {request.likes}
-                      </span>
+                  <div className="flex min-w-0 flex-1 gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-yellow-400/10 font-black text-yellow-400">
+                      {index + 1}
                     </div>
 
-                    <p className="mt-1 text-zinc-400">
-                      {request.artist || "Interpret nicht angegeben"}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h3 className="truncate text-lg font-black">
+                          {request.song_title}
+                        </h3>
 
-                    <p className="mt-2 text-sm text-zinc-500">
-                      Gewünscht von {request.guest_name} ·{" "}
-                      {new Date(request.created_at).toLocaleString("de-CH", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
+                        <StatusBadge
+                          status={request.status}
+                        />
 
-                    {request.note && (
-                      <p className="mt-3 rounded-xl bg-zinc-950 p-3 text-sm text-zinc-400">
-                        {request.note}
+                        <Badge variant="neutral">
+                          <Heart
+                            size={13}
+                            className="mr-1"
+                          />
+                          {request.likes}
+                        </Badge>
+                      </div>
+
+                      <p className="mt-1 text-zinc-400">
+                        {request.artist ||
+                          "Interpret nicht angegeben"}
                       </p>
-                    )}
+
+                      <p className="mt-2 text-sm text-zinc-500">
+                        Gewünscht von{" "}
+                        <span className="font-semibold text-zinc-300">
+                          {request.guest_name}
+                        </span>
+                        {" · "}
+                        {formatDateTime(
+                          request.created_at
+                        )}
+                      </p>
+
+                      {request.note && (
+                        <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+                          <p className="text-xs font-bold uppercase tracking-wider text-zinc-600">
+                            Nachricht an den DJ
+                          </p>
+
+                          <p className="mt-2 text-sm leading-6 text-zinc-400">
+                            {request.note}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:justify-end">
-                    <ActionButton
-                      label="Planen"
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap xl:max-w-md xl:justify-end">
+                    <Button
+                      size="small"
+                      variant="secondary"
                       icon={<Clock3 size={17} />}
-                      onClick={() => updateStatus(request.id, "Geplant")}
-                    />
-
-                    <ActionButton
-                      label="Gespielt"
-                      icon={<Check size={17} />}
-                      onClick={() => updateStatus(request.id, "Gespielt")}
-                    />
-
-                    <ActionButton
-                      label="Ablehnen"
-                      icon={<X size={17} />}
-                      onClick={() => updateStatus(request.id, "Abgelehnt")}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => deleteRequest(request.id)}
-                      className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-300 transition hover:bg-red-500/20"
+                      onClick={() =>
+                        updateStatus(
+                          request,
+                          "Geplant"
+                        )
+                      }
                     >
-                      <Trash2 size={17} />
+                      Planen
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="success"
+                      icon={<Check size={17} />}
+                      onClick={() =>
+                        updateStatus(
+                          request,
+                          "Gespielt"
+                        )
+                      }
+                    >
+                      Gespielt
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      icon={<X size={17} />}
+                      onClick={() =>
+                        updateStatus(
+                          request,
+                          "Abgelehnt"
+                        )
+                      }
+                    >
+                      Ablehnen
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="danger"
+                      icon={<Trash2 size={17} />}
+                      onClick={() =>
+                        setRequestToDelete(request)
+                      }
+                    >
                       Löschen
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </article>
             ))}
+          </div>
+        )}
+      </Card>
 
-          {!loading && filteredRequests.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-zinc-800 p-10 text-center text-zinc-500">
-              Keine passenden Musikwünsche gefunden.
-            </div>
-          )}
-        </div>
-      </section>
+      <ConfirmDialog
+        open={requestToDelete !== null}
+        title="Musikwunsch löschen?"
+        description={
+          requestToDelete
+            ? `${requestToDelete.song_title} wird dauerhaft aus der Wunschliste entfernt.`
+            : ""
+        }
+        confirmLabel="Musikwunsch löschen"
+        dangerous
+        loading={deleting}
+        onConfirm={deleteRequest}
+        onCancel={() => {
+          if (!deleting) {
+            setRequestToDelete(null);
+          }
+        }}
+      />
     </div>
   );
 }
 
-function StatusCard({
+function SummaryCard({
   title,
   value,
+  variant,
 }: {
   title: string;
   value: number;
+  variant:
+    | "neutral"
+    | "info"
+    | "warning"
+    | "success";
 }) {
+  const styles = {
+    neutral: "bg-zinc-800 text-zinc-300",
+    info: "bg-blue-500/10 text-blue-400",
+    warning: "bg-yellow-400/10 text-yellow-400",
+    success: "bg-green-500/10 text-green-400",
+  };
+
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-      <p className="text-sm text-zinc-500">{title}</p>
-      <p className="mt-2 text-3xl font-black">{value}</p>
-    </div>
+    <Card hover padding="small">
+      <div
+        className={`flex h-11 w-11 items-center justify-center rounded-xl ${styles[variant]}`}
+      >
+        <Music2 size={21} />
+      </div>
+
+      <p className="mt-4 text-sm font-semibold text-zinc-500">
+        {title}
+      </p>
+
+      <p className="mt-1 text-3xl font-black">
+        {value}
+      </p>
+    </Card>
   );
 }
 
@@ -366,39 +544,26 @@ function StatusBadge({
 }: {
   status: MusicStatus;
 }) {
-  const styles: Record<MusicStatus, string> = {
-    Neu: "bg-blue-500/10 text-blue-300",
-    Geplant: "bg-yellow-500/10 text-yellow-300",
-    Gespielt: "bg-green-500/10 text-green-300",
-    Abgelehnt: "bg-red-500/10 text-red-300",
-  };
+  if (status === "Neu") {
+    return <Badge variant="info">Neu</Badge>;
+  }
 
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-bold ${styles[status]}`}
-    >
-      {status}
-    </span>
-  );
+  if (status === "Geplant") {
+    return <Badge variant="warning">Geplant</Badge>;
+  }
+
+  if (status === "Gespielt") {
+    return <Badge variant="success">Gespielt</Badge>;
+  }
+
+  return <Badge variant="danger">Abgelehnt</Badge>;
 }
 
-function ActionButton({
-  label,
-  icon,
-  onClick,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm font-bold text-zinc-300 transition hover:border-yellow-400 hover:text-yellow-400"
-    >
-      {icon}
-      {label}
-    </button>
-  );
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("de-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
