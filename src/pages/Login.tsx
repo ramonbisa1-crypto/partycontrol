@@ -63,12 +63,15 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#050505] text-white">
-      <div className="pointer-events-none absolute -left-40 -top-40 h-[34rem] w-[34rem] rounded-full bg-yellow-400/8 blur-3xl" />
+      {/* Hintergrund */}
+      <div className="pointer-events-none absolute -left-40 -top-40 h-[34rem] w-[34rem] rounded-full bg-yellow-400/10 blur-3xl" />
 
       <div className="pointer-events-none absolute -bottom-48 -right-32 h-[36rem] w-[36rem] rounded-full bg-yellow-400/5 blur-3xl" />
 
       <div className="relative mx-auto grid min-h-screen max-w-7xl grid-cols-1 lg:grid-cols-[1.1fr_0.9fr]">
+        {/* Linke Seite Desktop */}
         <section className="hidden flex-col justify-between border-r border-zinc-900 p-10 lg:flex xl:p-14">
+          {/* Logo */}
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-yellow-400 text-black shadow-lg shadow-yellow-400/10">
               <PartyPopper size={23} />
@@ -85,6 +88,7 @@ export default function Login() {
             </div>
           </div>
 
+          {/* Hero */}
           <div className="max-w-xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-yellow-400/20 bg-yellow-400/10 px-4 py-2 text-sm font-bold text-yellow-400">
               <Sparkles size={16} />
@@ -126,8 +130,10 @@ export default function Login() {
           </p>
         </section>
 
+        {/* Login-Bereich */}
         <section className="flex min-h-screen items-center justify-center p-4 sm:p-6 lg:p-10">
           <div className="w-full max-w-md">
+            {/* Mobile Logo */}
             <div className="mb-8 flex items-center gap-3 lg:hidden">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-yellow-400 text-black">
                 <PartyPopper size={23} />
@@ -144,6 +150,7 @@ export default function Login() {
               </div>
             </div>
 
+            {/* Login Card */}
             <div className="rounded-[2rem] border border-zinc-800 bg-zinc-950/90 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
               <div>
                 <p className="font-semibold text-yellow-400">
@@ -159,10 +166,12 @@ export default function Login() {
                 </p>
               </div>
 
+              {/* Login Formular */}
               <form
                 className="mt-7 space-y-5"
                 onSubmit={login}
               >
+                {/* E-Mail */}
                 <div>
                   <label className="app-label">
                     E-Mail-Adresse
@@ -170,12 +179,12 @@ export default function Login() {
 
                   <div className="relative">
                     <Mail
-                      className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+                      className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-zinc-600"
                       size={18}
                     />
 
                     <input
-                      className="app-input pl-11"
+                      className="app-input !pl-12"
                       type="email"
                       autoComplete="email"
                       placeholder="name@beispiel.ch"
@@ -187,6 +196,7 @@ export default function Login() {
                   </div>
                 </div>
 
+                {/* Passwort */}
                 <div>
                   <label className="app-label">
                     Passwort
@@ -194,12 +204,12 @@ export default function Login() {
 
                   <div className="relative">
                     <LockKeyhole
-                      className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+                      className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-zinc-600"
                       size={18}
                     />
 
                     <input
-                      className="app-input pl-11"
+                      className="app-input !pl-12"
                       type="password"
                       autoComplete="current-password"
                       placeholder="Passwort"
@@ -211,6 +221,7 @@ export default function Login() {
                   </div>
                 </div>
 
+                {/* Login Button */}
                 <Button
                   type="submit"
                   fullWidth
@@ -221,6 +232,7 @@ export default function Login() {
                 </Button>
               </form>
 
+              {/* Sicherheitshinweis */}
               <div className="mt-6 rounded-2xl border border-zinc-800 bg-black/20 p-4">
                 <div className="flex items-start gap-3">
                   <ShieldCheck
