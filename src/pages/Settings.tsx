@@ -7,9 +7,15 @@ import {
   Home,
   LogOut,
   Music2,
+  ShieldCheck,
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import PageHeader from "../components/ui/PageHeader";
+import { useToast } from "../components/ui/ToastProvider";
 
 type PublicLink = {
   id: string;
@@ -20,7 +26,10 @@ type PublicLink = {
 };
 
 export default function Settings() {
+  const { showToast } = useToast();
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const baseUrl = window.location.origin;
 
@@ -28,21 +37,21 @@ export default function Settings() {
     {
       id: "home",
       title: "Öffentliche Startseite",
-      description: "Zentrale Seite für alle Gäste.",
+      description: "Zentrale Party-Seite für alle Gäste.",
       url: `${baseUrl}/?view=home`,
       icon: <Home size={20} />,
     },
     {
       id: "music",
       title: "Musikwünsche",
-      description: "Öffentliche Seite für Musikwünsche.",
+      description: "Öffentliche Seite für Songwünsche und Likes.",
       url: `${baseUrl}/?view=music`,
       icon: <Music2 size={20} />,
     },
     {
       id: "photos",
       title: "Fotowand",
-      description: "Öffentlicher Foto-Upload und Galerie.",
+      description: "Öffentlicher Foto-Upload und Live-Galerie.",
       url: `${baseUrl}/?view=photos`,
       icon: <Camera size={20} />,
     },
@@ -51,62 +60,80 @@ export default function Settings() {
   async function copyLink(link: PublicLink) {
     try {
       await navigator.clipboard.writeText(link.url);
+
       setCopiedId(link.id);
+
+      showToast({
+        type: "success",
+        title: "Link kopiert",
+        message: `${link.title} wurde in die Zwischenablage kopiert.`,
+      });
 
       window.setTimeout(() => {
         setCopiedId(null);
       }, 2000);
     } catch {
-      alert("Link konnte nicht kopiert werden.");
+      showToast({
+        type: "error",
+        title: "Link konnte nicht kopiert werden",
+        message: "Bitte kopiere die URL manuell.",
+      });
     }
   }
 
   async function logout() {
+    setLoggingOut(true);
+
     const { error } = await supabase.auth.signOut();
 
     if (error) {
-      alert(error.message);
+      showToast({
+        type: "error",
+        title: "Logout fehlgeschlagen",
+        message: error.message,
+      });
+
+      setLoggingOut(false);
     }
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-10">
-      <div className="mb-8">
-        <p className="mb-2 font-semibold text-yellow-400">
-          System
-        </p>
+    <div className="page-enter p-4 sm:p-6 lg:p-10">
+      <PageHeader
+        eyebrow="System"
+        title="Einstellungen"
+        description="Verwalte öffentliche Links, Eventinformationen und deinen Account."
+      />
 
-        <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-          Einstellungen
-        </h1>
+      <Card className="mb-7" padding="large">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-yellow-400/10 text-yellow-400">
+            <Home size={22} />
+          </div>
 
-        <p className="mt-2 text-zinc-400">
-          Öffentliche Links und Account verwalten.
-        </p>
-      </div>
+          <div>
+            <h2 className="text-xl font-black sm:text-2xl">
+              Öffentliche Party-Seiten
+            </h2>
 
-      <section className="mb-7 rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-7">
-        <h2 className="text-2xl font-black">
-          Öffentliche Party-Seiten
-        </h2>
-
-        <p className="mt-2 text-zinc-500">
-          Diese Seiten funktionieren ohne Login und können als QR-Code
-          geteilt werden.
-        </p>
+            <p className="text-sm text-zinc-500">
+              Diese Seiten funktionieren ohne Login.
+            </p>
+          </div>
+        </div>
 
         <div className="mt-6 space-y-4">
           {publicLinks.map((link) => (
             <div
               key={link.id}
-              className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 lg:flex-row lg:items-center"
+              className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-black/20 p-4 transition hover:border-zinc-700 hover:bg-zinc-900 lg:flex-row lg:items-center"
             >
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-yellow-400/10 text-yellow-400">
                 {link.icon}
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-bold">
+                <p className="font-black">
                   {link.title}
                 </p>
 
@@ -120,58 +147,116 @@ export default function Settings() {
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => copyLink(link)}
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-2 font-bold transition hover:border-yellow-400 hover:text-yellow-400"
-                >
-                  {copiedId === link.id ? (
-                    <>
+                <Button
+                  variant="secondary"
+                  icon={
+                    copiedId === link.id ? (
                       <Check size={18} />
-                      Kopiert
-                    </>
-                  ) : (
-                    <>
+                    ) : (
                       <Copy size={18} />
-                      Kopieren
-                    </>
-                  )}
-                </button>
+                    )
+                  }
+                  onClick={() => copyLink(link)}
+                >
+                  {copiedId === link.id
+                    ? "Kopiert"
+                    : "Kopieren"}
+                </Button>
 
                 <a
                   href={link.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 font-bold text-black transition hover:bg-yellow-300"
                 >
-                  <ExternalLink size={18} />
-                  Öffnen
+                  <Button
+                    icon={<ExternalLink size={18} />}
+                    fullWidth
+                  >
+                    Öffnen
+                  </Button>
                 </a>
               </div>
             </div>
           ))}
         </div>
-      </section>
+      </Card>
 
-      <section className="max-w-2xl rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-7">
-        <h2 className="text-2xl font-black">
+      <Card className="mb-7" padding="large">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-500/10 text-green-400">
+            <ShieldCheck size={22} />
+          </div>
+
+          <div>
+            <h2 className="text-xl font-black sm:text-2xl">
+              Eventinformationen
+            </h2>
+
+            <p className="text-sm text-zinc-500">
+              Aktuelle Konfiguration der Party.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <InfoCard
+            title="Datum"
+            value="16. Oktober 2026"
+          />
+
+          <InfoCard
+            title="Startzeit"
+            value="Aktuell 19:00 Uhr"
+          />
+
+          <InfoCard
+            title="Systemstatus"
+            value="Online"
+          />
+        </div>
+      </Card>
+
+      <Card padding="large" className="max-w-2xl">
+        <h2 className="text-xl font-black sm:text-2xl">
           Account
         </h2>
 
-        <p className="mt-2 text-zinc-500">
-          Melde dich ab, wenn du das Gerät wechselst oder PartyControl nicht
-          mehr verwendest.
+        <p className="mt-2 leading-7 text-zinc-500">
+          Melde dich ab, wenn du PartyControl auf diesem Gerät nicht mehr
+          verwendest.
         </p>
 
-        <button
-          type="button"
-          onClick={logout}
-          className="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-red-500 px-6 py-3 font-bold text-white transition hover:bg-red-400"
-        >
-          <LogOut size={19} />
-          Logout
-        </button>
-      </section>
+        <div className="mt-6">
+          <Button
+            variant="danger"
+            icon={<LogOut size={19} />}
+            loading={loggingOut}
+            onClick={logout}
+          >
+            Logout
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function InfoCard({
+  title,
+  value,
+}: {
+  title: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black/20 p-5">
+      <p className="text-sm font-semibold text-zinc-500">
+        {title}
+      </p>
+
+      <p className="mt-2 font-black text-zinc-200">
+        {value}
+      </p>
     </div>
   );
 }
